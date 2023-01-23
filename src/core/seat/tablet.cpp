@@ -479,7 +479,7 @@ void wf::tablet_pad_t::update_focus(wlr_surface *focus_surface)
     {
         wlr_tablet_v2_tablet_pad_notify_enter(pad_v2,
             attached_to->tablet_v2, focus_surface);
-    } else
+    } else if (old_focus)
     {
         wlr_tablet_v2_tablet_pad_notify_leave(pad_v2, old_focus);
     }
