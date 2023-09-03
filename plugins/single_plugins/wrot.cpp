@@ -80,7 +80,7 @@ class wf_wrot : public wf::per_output_plugin_instance_t, public wf::pointer_inte
 
         last_position = output->get_cursor_position();
         current_mode  = mode::ROT_3D;
-        return true;
+        return false; // pass btn press to grab node
     };
 
     wf::key_callback reset = [this] (auto)
@@ -170,7 +170,6 @@ class wf_wrot : public wf::per_output_plugin_instance_t, public wf::pointer_inte
     void init() override
     {
         input_grab = std::make_unique<wf::input_grab_t>("wrot", output, nullptr, this, nullptr);
-
         call = [=] (auto)
         {
             if (current_mode != mode::NONE)
@@ -196,7 +195,7 @@ class wf_wrot : public wf::per_output_plugin_instance_t, public wf::pointer_inte
 
             last_position = output->get_cursor_position();
             current_mode  = mode::ROT_2D;
-            return true;
+            return false; // pass btn press to the grab node
         };
 
         output->add_button(wf::option_wrapper_t<wf::buttonbinding_t>("wrot/activate"), &call);
