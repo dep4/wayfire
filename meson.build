@@ -72,6 +72,7 @@ if git.found()
 	endif
 endif
 add_project_arguments('-DWAYFIRE_VERSION=@0@'.format(version), language: 'cpp')
+add_project_arguments('-ftime-trace', language: 'cpp')
 conf_data.set('WAYFIRE_VERSION', '-DWAYFIRE_VERSION=@0@'.format(version))
 
 conf_data.set('INSTALL_PREFIX', get_option('prefix'))

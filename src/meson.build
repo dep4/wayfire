@@ -95,7 +95,7 @@ libwayfire_sta = static_library('libwayfire', wayfire_sources,
     dependencies: wayfire_dependencies,
     include_directories: [wayfire_conf_inc, wayfire_api_inc],
     cpp_args: debug_arguments,
-    install: false)
+    install: false, cpp_pch: 'pch/pch.h')
 
 libwayfire = declare_dependency(link_whole: libwayfire_sta,
     include_directories: [wayfire_conf_inc, wayfire_api_inc],
@@ -107,7 +107,8 @@ tests_include_dirs = include_directories('.')
 executable('wayfire', ['main.cpp'],
     dependencies: libwayfire,
     install: true,
-    cpp_args: debug_arguments)
+    cpp_args: debug_arguments,
+    cpp_pch: 'pch/pch.h')
 
 shared_module('default-config-backend', 'default-config-backend.cpp',
     dependencies: wayfire_dependencies,
