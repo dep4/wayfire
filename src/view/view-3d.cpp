@@ -2,6 +2,7 @@
 #include "wayfire/geometry.hpp"
 #include "wayfire/region.hpp"
 #include "wayfire/scene-input.hpp"
+#include "wayfire/scene-render.hpp"
 #include "wayfire/scene.hpp"
 #include "wayfire/toplevel-view.hpp"
 #include "wayfire/view-transform.hpp"
@@ -46,6 +47,7 @@ namespace scene
 void transform_manager_node_t::_add_transformer(
     wf::scene::floating_inner_ptr transformer, int z_order, std::string name)
 {
+    wf::scene::damage_node(shared_from_this(), get_bounding_box());
     size_t pos = 0;
     while (pos < transformers.size() && transformers[pos].z_order < z_order)
     {
@@ -65,6 +67,7 @@ void transform_manager_node_t::_add_transformer(
     parent->set_children_list({transformer});
     transformer->set_children_list(children);
     wf::scene::update(transformer, update_flag::CHILDREN_LIST);
+    wf::scene::damage_node(shared_from_this(), get_bounding_box());
 }
 
 void transform_manager_node_t::_rem_transformer(
@@ -75,6 +78,7 @@ void transform_manager_node_t::_rem_transformer(
         return;
     }
 
+    wf::scene::damage_node(shared_from_this(), get_bounding_box());
     auto children = node->get_children();
     auto parent   = dynamic_cast<floating_inner_node_t*>(node->parent());
 
@@ -89,6 +93,7 @@ void transform_manager_node_t::_rem_transformer(
     auto it = std::remove_if(transformers.begin(), transformers.end(), find_node);
     this->transformers.erase(it, transformers.end());
     wf::scene::update(parent->shared_from_this(), update_flag::CHILDREN_LIST);
+    wf::scene::damage_node(shared_from_this(), get_bounding_box());
 }
 
 view_2d_transformer_t::view_2d_transformer_t(wayfire_view view) :
