@@ -270,10 +270,9 @@ static wf::pointf_t get_absolute_coords_from_relative(wf::geometry_t view,
 /* TODO: cache total_transform, because it is often unnecessarily recomputed */
 glm::mat4 view_3d_transformer_t::calculate_total_transform()
 {
-    auto og = view->get_output()->get_relative_geometry();
-    glm::mat4 depth_scale =
-        glm::scale(glm::mat4(1.0), {1, 1, 2.0 / std::min(og.width, og.height)});
-
+    auto bbox   = get_children_bounding_box();
+    float scale = std::max(bbox.width, bbox.height);
+    glm::mat4 depth_scale = glm::scale(glm::mat4(1.0), {1, 1, 2.0 / scale});
     return translation * view_proj * depth_scale * rotation * scaling;
 }
 
