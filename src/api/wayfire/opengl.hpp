@@ -123,6 +123,10 @@ struct render_target_t : public framebuffer_t
      * coordinates to the framebuffer coordinates. */
     glm::mat4 get_orthographic_projection() const;
 
+    /* Returns a matrix which contains an orthographic projection from OpenGL [-1, 1] coordinates
+     * coordinates to the framebuffer coordinates (includes rotation, subbuffer, etc). */
+    glm::mat4 gl_to_framebuffer() const;
+
     /**
      * Set the scissor region to the given box.
      *

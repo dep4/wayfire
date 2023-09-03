@@ -472,6 +472,11 @@ glm::mat4 wf::render_target_t::get_orthographic_projection() const
         1.0f * geometry.y + 1.0f * geometry.height,
         1.0f * geometry.y);
 
+    return gl_to_framebuffer() * ortho;
+}
+
+glm::mat4 wf::render_target_t::gl_to_framebuffer() const
+{
     if (subbuffer)
     {
         auto sub = subbuffer.value();
@@ -492,10 +497,10 @@ glm::mat4 wf::render_target_t::get_orthographic_projection() const
         glm::mat4 translate = glm::translate(glm::mat4(1.0),
             glm::vec3(translate_x, translate_y, 0.0));
 
-        return translate * scale * this->transform * ortho;
+        return translate * scale * this->transform;
     }
 
-    return this->transform * ortho;
+    return this->transform;
 }
 
 void wf::render_target_t::logic_scissor(wlr_box box) const
@@ -587,7 +592,7 @@ wf::texture_t::texture_t(wlr_texture *texture, std::optional<wlr_fbox> viewport)
         viewport_box.y2 = 1.0 - (viewport->y) / height;
     }
 }
-}
+} // namespace wf
 
 namespace OpenGL
 {

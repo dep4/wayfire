@@ -400,7 +400,7 @@ class view_3d_render_instance_t :
                     1.0
                 });
 
-        transform = target.transform * scale * translate * transform;
+        transform = target.gl_to_framebuffer() * scale * translate * transform;
         auto tex = get_texture(target.scale);
 
         OpenGL::render_begin(target);
