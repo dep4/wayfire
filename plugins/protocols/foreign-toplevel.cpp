@@ -85,9 +85,9 @@ class wayfire_foreign_toplevel
         } else if (app_id_mode == "full")
         {
 #if WF_HAS_XWAYLAND
-            if (view->get_wlr_surface() && wlr_surface_is_xwayland_surface(view->get_wlr_surface()))
+            if (wlr_xwayland_surface *xw_surface =
+                    wlr_xwayland_surface_try_from_wlr_surface(view->get_wlr_surface()))
             {
-                auto xw_surface = wlr_xwayland_surface_from_wlr_surface(view->get_wlr_surface());
                 ev.app_id = nonull(xw_surface->instance);
             }
 

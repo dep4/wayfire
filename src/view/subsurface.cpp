@@ -21,7 +21,7 @@ wf::wlr_subsurface_controller_t::wlr_subsurface_controller_t(wlr_subsurface *sub
     sub->data = this;
 
     auto surface_node = std::make_shared<scene::wlr_surface_node_t>(sub->surface, true);
-    if (!sub->mapped)
+    if (!sub->surface->mapped)
     {
         surface_node->set_enabled(false);
     }
@@ -45,8 +45,8 @@ wf::wlr_subsurface_controller_t::wlr_subsurface_controller_t(wlr_subsurface *sub
         delete this;
     });
 
-    on_map.connect(&sub->events.map);
-    on_unmap.connect(&sub->events.unmap);
+    on_map.connect(&sub->surface->events.map);
+    on_unmap.connect(&sub->surface->events.unmap);
     on_destroy.connect(&sub->events.destroy);
 }
 

@@ -37,6 +37,8 @@ class xwayland_view_controller_t
     wf::wl_listener_wrapper on_set_parent;
     wf::wl_listener_wrapper on_map;
     wf::wl_listener_wrapper on_unmap;
+    wf::wl_listener_wrapper on_associate;
+    wf::wl_listener_wrapper on_dissociate;
 
   public:
     xwayland_view_controller_t(wlr_xwayland_surface *xsurf)
@@ -66,6 +68,7 @@ class xwayland_view_controller_t
 
         on_map.set_callback([&] (void*)
         {
+            LOGE("new xwayland surface ", xw->title, " class: ", xw->class_t, " instance: ", xw->instance);
             wf::view_pre_map_signal pre_map;
             pre_map.view    = view.get();
             pre_map.surface = xw->surface;
@@ -79,8 +82,19 @@ class xwayland_view_controller_t
             }
         });
         on_unmap.set_callback([&] (void*) { view->handle_unmap_request(); });
-        on_map.connect(&xw->events.map);
-        on_unmap.connect(&xw->events.unmap);
+
+        on_associate.set_callback([&] (void*)
+        {
+            on_map.connect(&xw->surface->events.map);
+            on_unmap.connect(&xw->surface->events.unmap);
+        });
+        on_dissociate.set_callback([&] (void*)
+        {
+            on_map.disconnect();
+            on_unmap.disconnect();
+        });
+        on_associate.connect(&xw->events.associate);
+        on_dissociate.connect(&xw->events.dissociate);
     }
 
     ~xwayland_view_controller_t()
@@ -158,7 +172,7 @@ class xwayland_view_controller_t
             break;
         }
 
-        if (xw->mapped)
+        if (xw->surface && xw->surface->mapped)
         {
             view->handle_map_request(xw->surface);
         }
@@ -273,13 +287,10 @@ void wf::xwayland_update_default_cursor()
 void wf::xwayland_bring_to_front(wlr_surface *surface)
 {
 #if WF_HAS_XWAYLAND
-    if (wlr_surface_is_xwayland_surface(surface))
+
+    if (wlr_xwayland_surface *xwayland_surface = wlr_xwayland_surface_try_from_wlr_surface(surface))
     {
-        // Conversion to wlr surface might fail if we are at the very end of the surface life cycle.
-        if (auto xw = wlr_xwayland_surface_from_wlr_surface(surface))
-        {
-            wlr_xwayland_surface_restack(xw, NULL, XCB_STACK_MODE_ABOVE);
-        }
+        wlr_xwayland_surface_restack(xwayland_surface, NULL, XCB_STACK_MODE_ABOVE);
     }
 
 #endif

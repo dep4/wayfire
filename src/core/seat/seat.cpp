@@ -231,6 +231,13 @@ xkb_state*wf::seat_t::get_xkb_state()
     return nullptr;
 }
 
+void wf::seat_t::notify_activity()
+{
+    wlr_idle_notifier_v1_notify_activity(wf::get_core().protocols.idle_notifier, this->seat);
+    seat_activity_signal data;
+    wf::get_core().emit(&data);
+}
+
 std::vector<uint32_t> wf::seat_t::get_pressed_keys()
 {
     std::vector<uint32_t> pressed_keys{priv->pressed_keys.begin(), priv->pressed_keys.end()};

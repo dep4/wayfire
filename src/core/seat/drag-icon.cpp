@@ -127,7 +127,7 @@ wf::drag_icon_t::drag_icon_t(wlr_drag_icon *ic) : icon(ic)
 
     // Sometimes, the drag surface is reused between two or more drags.
     // In this case, when the drag starts, the icon is already mapped.
-    if (!icon->mapped)
+    if (!icon->surface->mapped)
     {
         root_node->set_enabled(false);
     }
@@ -147,8 +147,8 @@ wf::drag_icon_t::drag_icon_t(wlr_drag_icon *ic) : icon(ic)
         wf::get_core().seat->priv->drag_icon = nullptr;
     });
 
-    on_map.connect(&icon->events.map);
-    on_unmap.connect(&icon->events.unmap);
+    on_map.connect(&icon->surface->events.map);
+    on_unmap.connect(&icon->surface->events.unmap);
     on_destroy.connect(&icon->events.destroy);
 
 
@@ -175,8 +175,8 @@ wf::point_t wf::drag_icon_t::get_position()
 
     if (root_node->is_enabled())
     {
-        pos.x += icon->surface->sx;
-        pos.y += icon->surface->sy;
+        pos.x += icon->surface->current.dx;
+        pos.y += icon->surface->current.dy;
     }
 
     return {(int)pos.x, (int)pos.y};

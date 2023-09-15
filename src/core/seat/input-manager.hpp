@@ -59,6 +59,18 @@ class input_manager_t
      */
     void set_exclusive_focus(wl_client *client);
 
+    /**
+     * Send inhibit changed signal.
+     * When ref_count is 0, send uninhibit. Else send inhibit.
+     */
+    void send_inhibit_changed_signal(int ref_count);
+
+    /**
+     * The inhibit ref count variable.
+     */
+    int inhibitor_ref_count;
+
+
     std::vector<std::unique_ptr<wf::input_device_impl_t>> input_devices;
 };
 }

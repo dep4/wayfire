@@ -42,7 +42,7 @@ void gl_call(const char *func, uint32_t line, const char *glfunc)
     }
 
     LOGE("gles2: function ", glfunc, " in ", func, " line ", line, ": ",
-        gl_error_string(glGetError()));
+        gl_error_string(err));
 }
 
 namespace OpenGL

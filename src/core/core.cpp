@@ -95,7 +95,7 @@ void wf::compositor_core_impl_t::init()
      * 3. weston toy clients expect xdg-shell before wl_seat, i.e
      * init_desktop_apis() should come before input.
      * 4. GTK expects primary selection early. */
-    compositor = wlr_compositor_create(display, renderer);
+    compositor = wlr_compositor_create(display, 6, renderer);
     /* Needed for subsurfaces */
     wlr_subcompositor_create(display);
 
@@ -132,6 +132,21 @@ void wf::compositor_core_impl_t::init()
     });
     input_inhibit_deactivated.connect(&protocols.input_inhibit->events.deactivate);
 
+    /* idle-inhibit setup */
+    input->inhibitor_ref_count = 0;
+    protocols.idle_inhibit     = wlr_idle_inhibit_v1_create(display);
+    idle_inhibitor_new.set_callback([&] (void*)
+    {
+        input->send_inhibit_changed_signal(++input->inhibitor_ref_count);
+    });
+    idle_inhibitor_new.connect(&protocols.idle_inhibit->events.new_inhibitor);
+
+    idle_inhibitor_destroy.set_callback([&] (void*)
+    {
+        input->send_inhibit_changed_signal(--input->inhibitor_ref_count);
+    });
+    idle_inhibitor_destroy.connect(&protocols.idle_inhibit->events.destroy);
+
     /* decoration_manager setup */
     protocols.decorator_manager = wlr_server_decoration_manager_create(display);
     protocols.xdg_decorator     = wlr_xdg_decoration_manager_v1_create(display);
@@ -154,7 +169,7 @@ void wf::compositor_core_impl_t::init()
     });
     vptr_created.connect(&protocols.vptr_manager->events.new_virtual_pointer);
 
-    protocols.idle_inhibit = wlr_idle_inhibit_v1_create(display);
+    protocols.idle_notifier = wlr_idle_notifier_v1_create(display);
     idle_inhibitor_created.set_callback([&] (void *data)
     {
         auto wlri = static_cast<wlr_idle_inhibitor_v1*>(data);
@@ -164,7 +179,6 @@ void wf::compositor_core_impl_t::init()
     idle_inhibitor_created.connect(
         &protocols.idle_inhibit->events.new_inhibitor);
 
-    protocols.idle = wlr_idle_create(display);
     protocols.pointer_gestures = wlr_pointer_gestures_v1_create(display);
     protocols.relative_pointer = wlr_relative_pointer_manager_v1_create(display);
 

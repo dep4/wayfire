@@ -149,7 +149,7 @@ class render_manager
      *
      * @param box The output box to be damaged, in output-local coordinates.
      */
-    void damage(const wlr_box& box);
+    void damage(const wlr_box& box, bool repaint = true);
 
     /**
      * Same as damage_whole(), but damages only a part of the output.
@@ -157,7 +157,7 @@ class render_manager
      * @param region The output region to be damaged, in output-local
      *        coordinates.
      */
-    void damage(const wf::region_t& region);
+    void damage(const wf::region_t& region, bool repaint = true);
 
     /**
      * @return A box in output-local coordinates containing the given

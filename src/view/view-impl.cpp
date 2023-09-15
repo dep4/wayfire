@@ -163,20 +163,20 @@ wayfire_view wf::wl_surface_to_wayfire_view(wl_resource *resource)
     }
 
     void *handle = NULL;
-    if (wlr_surface_is_xdg_surface(surface))
+    if (wlr_xdg_surface *xdg_surface = wlr_xdg_surface_try_from_wlr_surface(surface))
     {
-        handle = wlr_xdg_surface_from_wlr_surface(surface)->data;
+        handle = xdg_surface->data;
     }
 
-    if (wlr_surface_is_layer_surface(surface))
+    if (wlr_layer_surface_v1 *layer_shell_surface = wlr_layer_surface_v1_try_from_wlr_surface(surface))
     {
-        handle = wlr_layer_surface_v1_from_wlr_surface(surface)->data;
+        handle = layer_shell_surface->data;
     }
 
 #if WF_HAS_XWAYLAND
-    if (wlr_surface_is_xwayland_surface(surface))
+    if (wlr_xwayland_surface *xwayland_surface = wlr_xwayland_surface_try_from_wlr_surface(surface))
     {
-        handle = wlr_xwayland_surface_from_wlr_surface(surface)->data;
+        handle = xwayland_surface->data;
     }
 
 #endif

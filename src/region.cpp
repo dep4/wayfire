@@ -88,7 +88,39 @@ void wf::region_t::expand_edges(int amount)
 {
     /* FIXME: make sure we don't throw pixman errors when amount is bigger
      * than a rectangle size */
-    wlr_region_expand(this->to_pixman(), this->to_pixman(), amount);
+    pixman_region32_t *region = this->to_pixman();
+
+    if (amount == 0)
+    {
+        return;
+    }
+
+    int nrects;
+    const pixman_box32_t *src_rects = pixman_region32_rectangles(region, &nrects);
+
+    pixman_box32_t *dst_rects = (pixman_box32_t*)malloc(nrects * sizeof(pixman_box32_t));
+    if (dst_rects == NULL)
+    {
+        return;
+    }
+
+    for (int i = 0; i < nrects; ++i)
+    {
+        dst_rects[i].x1 = src_rects[i].x1 - amount;
+        dst_rects[i].x2 = src_rects[i].x2 + amount;
+        dst_rects[i].y1 = src_rects[i].y1 - amount;
+        dst_rects[i].y2 = src_rects[i].y2 + amount;
+        /* If x1 > x2 or y1 > y2, this is an invalid rect.
+         * Set the rect members to 0 so it is skipped. */
+        if ((dst_rects[i].x1 > dst_rects[i].x2) || (dst_rects[i].y1 > dst_rects[i].y2))
+        {
+            dst_rects[i].x1 = dst_rects[i].x2 = dst_rects[i].y1 = dst_rects[i].y2 = 0;
+        }
+    }
+
+    pixman_region32_fini(region);
+    pixman_region32_init_rects(region, dst_rects, nrects);
+    free(dst_rects);
 }
 
 pixman_box32_t wf::region_t::get_extents() const

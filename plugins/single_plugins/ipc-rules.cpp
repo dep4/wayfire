@@ -374,7 +374,7 @@ class ipc_rules_t : public wf::plugin_interface_t, public wf::per_output_tracker
         {
 #if WF_HAS_XWAYLAND
             auto surf = view->get_wlr_surface();
-            if (surf && wlr_surface_is_xwayland_surface(surf))
+            if (surf && wlr_xwayland_surface_try_from_wlr_surface(surf))
             {
                 return "x-or";
             }

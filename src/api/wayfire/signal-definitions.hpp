@@ -160,6 +160,22 @@ struct keyboard_focus_changed_signal
     wf::scene::node_ptr new_focus;
 };
 
+/**
+ * on: core
+ * when: Seat activity has happened after being idle.
+ */
+struct seat_activity_signal
+{};
+
+/**
+ * on: core
+ * when: input inhibit changed.
+ */
+struct input_inhibit_changed_signal
+{
+    bool inhibit;
+};
+
 /* ----------------------------------------------------------------------------/
  * Output signals
  * -------------------------------------------------------------------------- */

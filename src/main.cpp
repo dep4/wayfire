@@ -343,7 +343,7 @@ int main(int argc, char *argv[])
     /** TODO: move this to core_impl constructor */
     core.display = display;
     core.ev_loop = wl_display_get_event_loop(core.display);
-    core.backend = wlr_backend_autocreate(core.display);
+    core.backend = wlr_backend_autocreate(core.display, &core.session);
 
     int drm_fd = wlr_backend_get_drm_fd(core.backend);
     if (drm_fd < 0)
@@ -364,7 +364,8 @@ int main(int argc, char *argv[])
         }
     }
 
-    core.renderer  = wlr_gles2_renderer_create_with_drm_fd(drm_fd);
+    core.renderer = wlr_gles2_renderer_create_with_drm_fd(drm_fd);
+    assert(core.renderer);
     core.allocator = wlr_allocator_autocreate(core.backend, core.renderer);
     assert(core.allocator);
     core.egl = wlr_gles2_renderer_get_egl(core.renderer);

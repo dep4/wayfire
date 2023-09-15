@@ -45,14 +45,11 @@ void wf::cursor_t::add_new_device(wlr_input_device *dev)
 
 void wf::cursor_t::setup_listeners()
 {
-    auto& core = wf::get_core_impl();
-
     /* Dispatch pointer events to the pointer_t */
     on_frame.set_callback([&] (void*)
     {
         seat->priv->lpointer->handle_pointer_frame();
-        wlr_idle_notify_activity(core.protocols.idle,
-            core.get_current_seat());
+        wf::get_core().seat->notify_activity();
     });
     on_frame.connect(&cursor->events.frame);
 
@@ -64,7 +61,7 @@ void wf::cursor_t::setup_listeners()
         if (mode != wf::input_event_processing_mode_t::IGNORE) \
         { \
             seat->priv->lpointer->handle_pointer_ ## evname(ev, mode); \
-            wlr_idle_notify_activity(core.protocols.idle, core.get_current_seat()); \
+            wf::get_core().seat->notify_activity(); \
         } \
         emit_device_post_event_signal(ev); \
     }); \
@@ -98,7 +95,7 @@ void wf::cursor_t::setup_listeners()
                 static_cast<wf::tablet_t*>(ev->tablet->data); \
             tablet->handle_ ## evname(ev, handling_mode); \
         } \
-        wlr_idle_notify_activity(wf::get_core().protocols.idle, seat->seat); \
+        wf::get_core().seat->notify_activity(); \
         emit_device_event_signal(ev); \
     }); \
     on_tablet_ ## evname.connect(&cursor->events.tablet_tool_ ## evname);
@@ -167,7 +164,7 @@ void wf::cursor_t::set_cursor(std::string name)
 
     idle_set_cursor.run_once([name, this] ()
     {
-        wlr_xcursor_manager_set_cursor_image(xcursor, name.c_str(), cursor);
+        wlr_cursor_set_xcursor(cursor, xcursor, name.c_str());
     });
 }
 

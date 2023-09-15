@@ -270,7 +270,7 @@ void wf::xdg_toplevel_view_t::request_native_size()
 void wf::xdg_toplevel_view_t::set_activated(bool active)
 {
     toplevel_view_interface_t::set_activated(active);
-    if (xdg_toplevel && xdg_toplevel->base->mapped)
+    if (xdg_toplevel && xdg_toplevel->base->surface->mapped)
     {
         wlr_xdg_toplevel_set_activated(xdg_toplevel, active);
     } else if (xdg_toplevel)
@@ -424,10 +424,10 @@ struct wf_xdg_decoration_t
     std::function<void(void*)> commit = [&] (void*)
     {
         bool use_csd = (decor->current.mode == WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE);
-        uses_csd[decor->surface->surface] = use_csd;
+        uses_csd[decor->toplevel->base->surface] = use_csd;
 
         auto wf_surface = dynamic_cast<wf::xdg_toplevel_view_t*>(
-            wf::wl_surface_to_wayfire_view(decor->surface->surface->resource).get());
+            wf::wl_surface_to_wayfire_view(decor->toplevel->base->surface->resource).get());
         if (wf_surface)
         {
             wf_surface->set_decoration_mode(use_csd);
@@ -441,12 +441,12 @@ struct wf_xdg_decoration_t
         on_commit.set_callback(commit);
         on_destroy.set_callback([&] (void*)
         {
-            uses_csd.erase(decor->surface->surface);
+            uses_csd.erase(decor->toplevel->base->surface);
             delete this;
         });
 
         on_mode_request.connect(&decor->events.request_mode);
-        on_commit.connect(&decor->surface->surface->events.commit);
+        on_commit.connect(&decor->toplevel->base->surface->events.commit);
         on_destroy.connect(&decor->events.destroy);
         /* Read initial decoration settings */
         mode_request(NULL);
@@ -551,8 +551,8 @@ class xdg_toplevel_controller_t
             view->start_unmap_tx();
         });
 
-        on_map.connect(&toplevel->base->events.map);
-        on_unmap.connect(&toplevel->base->events.unmap);
+        on_map.connect(&toplevel->base->surface->events.map);
+        on_unmap.connect(&toplevel->base->surface->events.unmap);
     }
 
     ~xdg_toplevel_controller_t()

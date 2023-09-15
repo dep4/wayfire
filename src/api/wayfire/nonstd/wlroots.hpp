@@ -21,12 +21,12 @@ extern "C"
     struct wlr_xdg_output_manager_v1;
     struct wlr_export_dmabuf_manager_v1;
     struct wlr_server_decoration_manager;
-    struct wlr_xdg_decoration_manager_v1;
     struct wlr_input_inhibit_manager;
+    struct wlr_idle_inhibit_manager_v1;
+    struct wlr_xdg_decoration_manager_v1;
     struct wlr_virtual_keyboard_manager_v1;
     struct wlr_virtual_pointer_manager_v1;
-    struct wlr_idle;
-    struct wlr_idle_inhibit_manager_v1;
+    struct wlr_idle_notifier_v1;
     struct wlr_screencopy_manager_v1;
     struct wlr_foreign_toplevel_manager_v1;
     struct wlr_pointer_gestures_v1;
@@ -53,7 +53,10 @@ extern "C"
 #include <wlr/types/wlr_pointer.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_touch.h>
+#define static
 #include <wlr/types/wlr_output.h>
+#undef static
+#include <wlr/backend/session.h>
 #include <wlr/util/box.h>
 #include <wlr/util/edges.h>
 #include <wayland-server.h>

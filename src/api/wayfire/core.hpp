@@ -101,6 +101,7 @@ class compositor_core_t : public wf::object_base_t, public signal::provider_t
      * used instead of this one
      */
     wlr_backend *backend;
+    wlr_session *session;
     wlr_renderer *renderer;
     wlr_allocator *allocator;
 
@@ -127,7 +128,7 @@ class compositor_core_t : public wf::object_base_t, public signal::provider_t
         wlr_virtual_keyboard_manager_v1 *vkbd_manager;
         wlr_virtual_pointer_manager_v1 *vptr_manager;
         wlr_input_inhibit_manager *input_inhibit;
-        wlr_idle *idle;
+        wlr_idle_notifier_v1 *idle_notifier;
         wlr_idle_inhibit_manager_v1 *idle_inhibit;
         wlr_pointer_gestures_v1 *pointer_gestures;
         wlr_relative_pointer_manager_v1 *relative_pointer;

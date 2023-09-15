@@ -76,8 +76,8 @@ wayfire_xdg_popup::wayfire_xdg_popup(wlr_xdg_popup *popup) : wf::view_interface_
         unconstrain();
     });
 
-    on_map.connect(&popup->base->events.map);
-    on_unmap.connect(&popup->base->events.unmap);
+    on_map.connect(&popup->base->surface->events.map);
+    on_unmap.connect(&popup->base->surface->events.unmap);
     on_destroy.connect(&popup->base->events.destroy);
     on_new_popup.connect(&popup->base->events.new_popup);
     on_ping_timeout.connect(&popup->base->events.ping_timeout);
@@ -166,10 +166,10 @@ void wayfire_xdg_popup::update_position()
 
     // Offset relative to the parent surface
     wf::pointf_t popup_offset = {1.0 * popup->current.geometry.x, 1.0 * popup->current.geometry.y};
-    if (wlr_surface_is_xdg_surface(popup->parent))
+    if (wlr_xdg_surface *xdg_surface = wlr_xdg_surface_try_from_wlr_surface(popup->parent))
     {
         wlr_box box;
-        wlr_xdg_surface_get_geometry(wlr_xdg_surface_from_wlr_surface(popup->parent), &box);
+        wlr_xdg_surface_get_geometry(xdg_surface, &box);
         popup_offset.x += box.x;
         popup_offset.y += box.y;
     }

@@ -6,6 +6,7 @@
 #include "wayfire/output-layout.hpp"
 #include "wayfire/workspace-set.hpp"
 #include "wayfire/signal-definitions.hpp"
+#include "wayfire/seat.hpp"
 #include "../cube/cube-control-signal.hpp"
 
 #include <cmath>
@@ -36,60 +37,56 @@ class screensaver_animation_t : public duration_t
 class wayfire_idle
 {
     wf::option_wrapper_t<int> dpms_timeout{"idle/dpms_timeout"};
-    wf::wl_listener_wrapper on_idle_dpms, on_resume_dpms;
-    wlr_idle_timeout *timeout_dpms = NULL;
+    bool is_idle = false;
 
   public:
+    wf::signal::connection_t<wf::seat_activity_signal> on_seat_activity;
     std::optional<wf::idle_inhibitor_t> hotkey_inhibitor;
+    wf::wl_timer<false> timeout_dpms;
 
     wayfire_idle()
     {
         dpms_timeout.set_callback([=] ()
         {
-            create_dpms_timeout(dpms_timeout);
+            create_dpms_timeout();
         });
-        create_dpms_timeout(dpms_timeout);
+
+        on_seat_activity = [=] (void*)
+        {
+            create_dpms_timeout();
+        };
+        create_dpms_timeout();
+        wf::get_core().connect(&on_seat_activity);
     }
 
-    void destroy_dpms_timeout()
+    void create_dpms_timeout()
     {
-        if (timeout_dpms)
+        if (dpms_timeout <= 0)
         {
-            on_idle_dpms.disconnect();
-            on_resume_dpms.disconnect();
-            wlr_idle_timeout_destroy(timeout_dpms);
-        }
-
-        timeout_dpms = NULL;
-    }
-
-    void create_dpms_timeout(int timeout_sec)
-    {
-        destroy_dpms_timeout();
-        if (timeout_sec <= 0)
-        {
+            timeout_dpms.disconnect();
             return;
         }
 
-        timeout_dpms = wlr_idle_timeout_create(wf::get_core().protocols.idle,
-            wf::get_core().get_current_seat(), 1000 * timeout_sec);
-
-        on_idle_dpms.set_callback([&] (void*)
+        if (!timeout_dpms.is_connected() && is_idle)
         {
+            is_idle = false;
+            set_state(wf::OUTPUT_IMAGE_SOURCE_DPMS, wf::OUTPUT_IMAGE_SOURCE_SELF);
+
+            return;
+        }
+
+        timeout_dpms.disconnect();
+        timeout_dpms.set_timeout(1000 * dpms_timeout, [=] ()
+        {
+            is_idle = true;
             set_state(wf::OUTPUT_IMAGE_SOURCE_SELF, wf::OUTPUT_IMAGE_SOURCE_DPMS);
         });
-        on_idle_dpms.connect(&timeout_dpms->events.idle);
-
-        on_resume_dpms.set_callback([&] (void*)
-        {
-            set_state(wf::OUTPUT_IMAGE_SOURCE_DPMS, wf::OUTPUT_IMAGE_SOURCE_SELF);
-        });
-        on_resume_dpms.connect(&timeout_dpms->events.resume);
     }
 
     ~wayfire_idle()
     {
-        destroy_dpms_timeout();
+        timeout_dpms.disconnect();
+        wf::get_core().disconnect(&on_seat_activity);
     }
 
     /* Change all outputs with state from to state to */
@@ -128,17 +125,12 @@ class wayfire_idle_plugin : public wf::per_output_plugin_instance_t
     bool hook_set = false;
     bool output_inhibited = false;
     uint32_t last_time;
-    wlr_idle_timeout *timeout_screensaver = NULL;
-    wf::wl_listener_wrapper on_idle_screensaver, on_resume_screensaver;
+    wf::wl_timer<false> timeout_screensaver;
+    wf::signal::connection_t<wf::seat_activity_signal> on_seat_activity;
     wf::shared_data::ref_ptr_t<wayfire_idle> global_idle;
 
     wf::activator_callback toggle = [=] (auto)
     {
-        if (!output->can_activate_plugin(&grab_interface))
-        {
-            return false;
-        }
-
         if (global_idle->hotkey_inhibitor.has_value())
         {
             global_idle->hotkey_inhibitor.reset();
@@ -155,6 +147,29 @@ class wayfire_idle_plugin : public wf::per_output_plugin_instance_t
     {
         this->has_fullscreen = ev->has_promoted;
         update_fullscreen();
+    };
+
+    wf::signal::connection_t<wf::input_inhibit_changed_signal> inhibit_changed =
+        [=] (wf::input_inhibit_changed_signal *ev)
+    {
+        if (!ev)
+        {
+            return;
+        }
+
+        if (ev->inhibit)
+        {
+            wf::get_core().disconnect(&global_idle->on_seat_activity);
+            wf::get_core().disconnect(&on_seat_activity);
+            global_idle->timeout_dpms.disconnect();
+            timeout_screensaver.disconnect();
+        } else
+        {
+            wf::get_core().connect(&global_idle->on_seat_activity);
+            wf::get_core().connect(&on_seat_activity);
+            global_idle->create_dpms_timeout();
+            create_screensaver_timeout();
+        }
     };
 
     wf::config::option_base_t::updated_callback_t disable_on_fullscreen_changed =
@@ -207,49 +222,37 @@ class wayfire_idle_plugin : public wf::per_output_plugin_instance_t
 
         screensaver_timeout.set_callback([=] ()
         {
-            create_screensaver_timeout(screensaver_timeout);
+            create_screensaver_timeout();
         });
-        create_screensaver_timeout(screensaver_timeout);
+        create_screensaver_timeout();
+
+        on_seat_activity = [=] (void*)
+        {
+            create_screensaver_timeout();
+        };
+        wf::get_core().connect(&on_seat_activity);
+        wf::get_core().connect(&inhibit_changed);
     }
 
-    void destroy_screensaver_timeout()
+    void create_screensaver_timeout()
     {
-        if (state == CUBE_SCREENSAVER_RUNNING)
+        if (screensaver_timeout <= 0)
         {
-            stop_screensaver();
-        }
-
-        if (timeout_screensaver)
-        {
-            on_idle_screensaver.disconnect();
-            on_resume_screensaver.disconnect();
-            wlr_idle_timeout_destroy(timeout_screensaver);
-        }
-
-        timeout_screensaver = NULL;
-    }
-
-    void create_screensaver_timeout(int timeout_sec)
-    {
-        destroy_screensaver_timeout();
-        if (timeout_sec <= 0)
-        {
+            timeout_screensaver.disconnect();
             return;
         }
 
-        timeout_screensaver = wlr_idle_timeout_create(wf::get_core().protocols.idle,
-            wf::get_core().get_current_seat(), 1000 * timeout_sec);
-        on_idle_screensaver.set_callback([&] (void*)
+        if (!timeout_screensaver.is_connected() && (state == CUBE_SCREENSAVER_RUNNING))
+        {
+            stop_screensaver();
+            return;
+        }
+
+        timeout_screensaver.disconnect();
+        timeout_screensaver.set_timeout(1000 * screensaver_timeout, [=] ()
         {
             start_screensaver();
         });
-        on_idle_screensaver.connect(&timeout_screensaver->events.idle);
-
-        on_resume_screensaver.set_callback([&] (void*)
-        {
-            stop_screensaver();
-        });
-        on_resume_screensaver.connect(&timeout_screensaver->events.resume);
     }
 
     void inhibit_output()
@@ -351,8 +354,7 @@ class wayfire_idle_plugin : public wf::per_output_plugin_instance_t
 
         if (state == CUBE_SCREENSAVER_STOPPING)
         {
-            wlr_idle_notify_activity(wf::get_core().protocols.idle,
-                wf::get_core().get_current_seat());
+            wf::get_core().seat->notify_activity();
         }
     };
 
@@ -410,7 +412,9 @@ class wayfire_idle_plugin : public wf::per_output_plugin_instance_t
 
     void fini() override
     {
-        destroy_screensaver_timeout();
+        wf::get_core().disconnect(&on_seat_activity);
+        wf::get_core().disconnect(&inhibit_changed);
+        timeout_screensaver.disconnect();
         output->rem_binding(&toggle);
     }
 };

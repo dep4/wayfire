@@ -186,7 +186,11 @@ wf::region_t decoration_layout_t::calculate_region() const
     wf::region_t r{};
     for (auto& area : layout_areas)
     {
-        r |= area->get_geometry();
+        auto g = area->get_geometry();
+        if ((g.width > 0) && (g.height > 0))
+        {
+            r |= g;
+        }
     }
 
     return r;

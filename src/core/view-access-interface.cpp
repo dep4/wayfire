@@ -111,7 +111,7 @@ variant_t view_access_interface_t::get(const std::string & identifier, bool & er
             {
 #if WF_HAS_XWAYLAND
                 auto surf = _view->get_wlr_surface();
-                if (surf && wlr_surface_is_xwayland_surface(surf))
+                if (surf && wlr_xwayland_surface_try_from_wlr_surface(surf))
                 {
                     out = std::string("x-or");
                     break;

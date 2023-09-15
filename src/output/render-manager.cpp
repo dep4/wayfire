@@ -32,11 +32,9 @@ struct output_damage_t
     signal::connection_t<scene::root_node_update_signal> root_update;
     std::vector<scene::render_instance_uptr> render_instances;
 
-    wf::wl_listener_wrapper on_damage_destroy;
-
     wf::region_t frame_damage;
     wlr_output *output;
-    wlr_output_damage *damage_manager;
+    wlr_damage_ring damage_ring;
     output_t *wo;
 
     void update_scenegraph(uint32_t update_mask)
@@ -53,7 +51,7 @@ struct output_damage_t
                 // Damage is pushed up to the root in root coordinate system,
                 // we need it in layout-local coordinate system.
                 region += -wf::origin(wo->get_layout_geometry());
-                this->damage(region);
+                this->damage(region, true);
             };
 
             render_instances.clear();
@@ -75,27 +73,41 @@ struct output_damage_t
         this->output = output->handle;
         this->wo     = output;
 
-        damage_manager = wlr_output_damage_create(this->output);
-
-        on_damage_destroy.set_callback([=] (void*) { damage_manager = nullptr; });
-        on_damage_destroy.connect(&damage_manager->events.destroy);
-
         auto root = wf::get_core().scene();
         root_update = [=] (scene::root_node_update_signal *data)
         {
             update_scenegraph(data->flags);
         };
 
+        wlr_damage_ring_init(&damage_ring);
         root->connect<scene::root_node_update_signal>(&root_update);
         update_scenegraph(scene::update_flag::CHILDREN_LIST);
+        output->connect(&output_mode_changed);
+        int width, height;
+        wlr_output_transformed_resolution(output->handle, &width, &height);
+        wlr_damage_ring_set_bounds(&damage_ring, width, height);
     }
+
+    wf::signal::connection_t<wf::output_configuration_changed_signal>
+    output_mode_changed = [=] (wf::output_configuration_changed_signal *ev)
+    {
+        if (!ev || !ev->changed_fields)
+        {
+            return;
+        }
+
+        int width, height;
+        wlr_output_transformed_resolution(output, &width, &height);
+        wlr_damage_ring_set_bounds(&damage_ring, width, height);
+        schedule_repaint();
+    };
 
     /**
      * Damage the given region
      */
-    void damage(const wf::region_t& region)
+    void damage(const wf::region_t& region, bool repaint)
     {
-        if (region.empty() || !damage_manager)
+        if (region.empty())
         {
             return;
         }
@@ -103,12 +115,16 @@ struct output_damage_t
         /* Wlroots expects damage after scaling */
         auto scaled_region = region * wo->handle->scale;
         frame_damage |= scaled_region;
-        wlr_output_damage_add(damage_manager, scaled_region.to_pixman());
+        wlr_damage_ring_add(&damage_ring, scaled_region.to_pixman());
+        if (repaint)
+        {
+            schedule_repaint();
+        }
     }
 
-    void damage(const wf::geometry_t& box)
+    void damage(const wf::geometry_t& box, bool repaint)
     {
-        if ((box.width <= 0) || (box.height <= 0) || !damage_manager)
+        if ((box.width <= 0) || (box.height <= 0))
         {
             return;
         }
@@ -116,7 +132,11 @@ struct output_damage_t
         /* Wlroots expects damage after scaling */
         auto scaled_box = box * wo->handle->scale;
         frame_damage |= scaled_box;
-        wlr_output_damage_add_box(damage_manager, &scaled_box);
+        wlr_damage_ring_add_box(&damage_ring, &scaled_box);
+        if (repaint)
+        {
+            schedule_repaint();
+        }
     }
 
     wf::region_t acc_damage;
@@ -126,21 +146,9 @@ struct output_damage_t
      * whether there is any damage and makes sure frame_damage contains all the
      * damage needed for repainting the next frame.
      */
+    bool force_next_frame = false;
     bool make_current(bool& needs_swap)
     {
-        if (!damage_manager)
-        {
-            return false;
-        }
-
-        auto r = wlr_output_damage_attach_render(damage_manager, &needs_swap,
-            acc_damage.to_pixman());
-
-        if (!r)
-        {
-            return false;
-        }
-
         needs_swap |= force_next_frame;
         force_next_frame = false;
 
@@ -166,40 +174,9 @@ struct output_damage_t
      */
     wf::region_t get_scheduled_damage()
     {
-        if (!damage_manager)
-        {
-            return {};
-        }
-
         return frame_damage * (1.0 / wo->handle->scale);
     }
 
-    /**
-     * Swap the output buffers. Also clears the scheduled damage.
-     */
-    void swap_buffers(wf::region_t& swap_damage)
-    {
-        if (!output)
-        {
-            return;
-        }
-
-        int w, h;
-        wlr_output_transformed_resolution(output, &w, &h);
-
-        /* Make sure that the damage is in buffer coordinates */
-        wl_output_transform transform =
-            wlr_output_transform_invert(output->transform);
-        wlr_region_transform(swap_damage.to_pixman(), swap_damage.to_pixman(),
-            transform, w, h);
-
-        wlr_output_set_damage(output,
-            const_cast<wf::region_t&>(swap_damage).to_pixman());
-        wlr_output_commit(output);
-        frame_damage.clear();
-    }
-
-    bool force_next_frame = false;
     /**
      * Schedule a frame for the output
      */
@@ -260,7 +237,7 @@ struct output_damage_t
                 -vp.y * res.height,
                 vsize.width * res.width,
                 vsize.height * res.height,
-            });
+            }, true);
     }
 
     wf::wl_idle_call idle_damage;
@@ -724,7 +701,7 @@ struct repaint_delay_manager_t
 class wf::render_manager::impl
 {
   public:
-    wf::wl_listener_wrapper on_frame;
+    wf::wl_listener_wrapper on_frame, on_needs_frame, on_damage, on_request_state;
     wf::wl_timer<false> repaint_timer;
 
     output_t *output;
@@ -769,7 +746,37 @@ class wf::render_manager::impl
             frame_done_signal ev;
             output->emit(&ev);
         });
-        on_frame.connect(&output_damage->damage_manager->events.frame);
+
+        on_needs_frame.set_callback([&] (void*)
+        {
+            output_damage->schedule_repaint();
+        });
+
+        on_damage.set_callback([&] (void *data)
+        {
+            auto ev = static_cast<wlr_output_event_damage*>(data);
+            if (wlr_damage_ring_add(&output_damage->damage_ring, ev->damage))
+            {
+                output_damage->schedule_repaint();
+            }
+        });
+
+
+        on_request_state.set_callback([&] (void *data)
+        {
+            auto ev = static_cast<wlr_output_event_request_state*>(data);
+            wlr_output_commit_state(output->handle, ev->state);
+            wlr_damage_ring_set_bounds(&output_damage->damage_ring,
+                output->get_relative_geometry().width,
+                output->get_relative_geometry().height);
+            output_damage->damage_whole();
+            output_damage->schedule_repaint();
+        });
+
+        on_frame.connect(&output->handle->events.frame);
+        on_needs_frame.connect(&output->handle->events.needs_frame);
+        on_damage.connect(&output->handle->events.damage);
+        on_request_state.connect(&output->handle->events.request_state);
 
         background_color_opt.load_option("core/background_color");
         background_color_opt.set_callback([=] ()
@@ -897,8 +904,7 @@ class wf::render_manager::impl
 
     void update_bound_output()
     {
-        int current_fb;
-        GL_CALL(glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &current_fb));
+        int current_fb = wlr_gles2_renderer_get_current_fbo(output->handle->renderer);
         bind_output(current_fb);
 
         postprocessing->set_output_framebuffer(current_fb);
@@ -912,9 +918,22 @@ class wf::render_manager::impl
      */
     void paint()
     {
+        wl_output_transform transform;
+        wlr_render_pass *render_pass;
+        wlr_output_state pending;
+        wlr_buffer *buffer;
+        int width, height;
+        bool needs_swap;
+        int buffer_age;
+
         /* Part 1: frame setup: query damage, etc. */
         effects->run_effects(OUTPUT_EFFECT_PRE);
         effects->run_effects(OUTPUT_EFFECT_DAMAGE);
+
+        memset(&pending, 0, sizeof(wlr_output_state));
+        pending.committed |= WLR_OUTPUT_STATE_DAMAGE;
+
+        output->handle->frame_pending = false;
 
         if (do_direct_scanout())
         {
@@ -923,34 +942,69 @@ class wf::render_manager::impl
             return;
         }
 
-        bool needs_swap;
         if (!output_damage->make_current(needs_swap))
         {
-            wlr_output_rollback(output->handle);
             delay_manager->skip_frame();
-            return;
+            goto finish;
         }
 
-        if (!needs_swap && !constant_redraw_counter)
+        if ((!needs_swap && !constant_redraw_counter) ||
+            (!output->handle->needs_frame &&
+             !pixman_region32_not_empty(&output_damage->damage_ring.current)))
         {
             /* Optimization: the output doesn't need a swap (so isn't damaged),
              * and no plugin wants custom redrawing - we can just skip the whole
              * repaint */
-            wlr_output_rollback(output->handle);
             delay_manager->skip_frame();
-            return;
+            goto finish;
+        }
+
+        wlr_output_transformed_resolution(output->handle, &width, &height);
+
+        pixman_region32_init(&pending.damage);
+
+        transform = wlr_output_transform_invert(output->handle->transform);
+        wlr_region_transform(&pending.damage, &output_damage->damage_ring.current,
+            transform, width, height);
+
+        if (!wlr_output_configure_primary_swapchain(output->handle, &pending, &output->handle->swapchain))
+        {
+            LOGE("!wlr_output_configure_primary_swapchain");
+            goto finish;
+        }
+
+        buffer = wlr_swapchain_acquire(output->handle->swapchain, &buffer_age);
+        if (!buffer)
+        {
+            LOGE("!buffer");
+            goto finish;
         }
 
         // Accumulate damage now, when we are sure we will render the frame.
         // Doing this earlier may mean that the damage from the previous frames
         // creeps into the current frame damage, if we had skipped a frame.
+
+        wlr_damage_ring_get_buffer_damage(&output_damage->damage_ring, buffer_age,
+            output_damage->acc_damage.to_pixman());
         output_damage->accumulate_damage();
+
+        render_pass = wlr_renderer_begin_buffer_pass(
+            output->handle->renderer, buffer, NULL);
+        if (!render_pass)
+        {
+            LOGE("!render_pass");
+            wlr_buffer_unlock(buffer);
+            goto finish;
+        }
+
+        wlr_renderer_begin_with_buffer(output->handle->renderer, buffer);
 
         update_bound_output();
 
         /* Part 2: call the renderer, which sets swap_damage and
          * draws the scenegraph */
         render_output();
+        wlr_renderer_end(wf::get_core().renderer);
 
         /* Part 3: overlay effects */
         effects->run_effects(OUTPUT_EFFECT_OVERLAY);
@@ -974,16 +1028,41 @@ class wf::render_manager::impl
          * We render software cursors after everything else
          * for consistency with hardware cursor planes */
         OpenGL::render_begin();
-        wlr_renderer_begin(wf::get_core().renderer,
-            output->handle->width, output->handle->height);
+        wlr_renderer_begin_with_buffer(output->handle->renderer, buffer);
         wlr_output_render_software_cursors(output->handle,
             swap_damage.to_pixman());
         wlr_renderer_end(wf::get_core().renderer);
         OpenGL::render_end();
 
+        if (!wlr_render_pass_submit(render_pass))
+        {
+            LOGE("!wlr_render_pass_submit");
+            wlr_buffer_unlock(buffer);
+            goto finish;
+            return;
+        }
+
+        wlr_output_state_set_buffer(&pending, buffer);
+        wlr_buffer_unlock(buffer);
+
+        if (!wlr_output_test_state(output->handle, &pending))
+        {
+            goto finish;
+        }
+
+        if (!wlr_output_commit_state(output->handle, &pending))
+        {
+            LOGE("!wlr_output_commit_state");
+            goto finish;
+        }
+
+        wlr_damage_ring_rotate(&output_damage->damage_ring);
+
         /* Part 6: finalize frame: swap buffers, send frame_done, etc */
+finish:
+        output_damage->frame_damage.clear();
+        wlr_output_state_finish(&pending);
         OpenGL::unbind_output(output);
-        output_damage->swap_buffers(swap_damage);
         swap_damage.clear();
         post_paint();
     }
@@ -1145,14 +1224,14 @@ void render_manager::damage_whole_idle()
     pimpl->output_damage->damage_whole_idle();
 }
 
-void render_manager::damage(const wlr_box& box)
+void render_manager::damage(const wlr_box& box, bool repaint)
 {
-    pimpl->output_damage->damage(box);
+    pimpl->output_damage->damage(box, repaint);
 }
 
-void render_manager::damage(const wf::region_t& region)
+void render_manager::damage(const wf::region_t& region, bool repaint)
 {
-    pimpl->output_damage->damage(region);
+    pimpl->output_damage->damage(region, repaint);
 }
 
 wlr_box render_manager::get_ws_box(wf::point_t ws) const

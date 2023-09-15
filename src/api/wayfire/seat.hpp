@@ -98,6 +98,11 @@ class seat_t
     wf::output_t *get_active_output();
 
     /**
+     * Notify clients and plugins of input activity on the seat
+     */
+    void notify_activity();
+
+    /**
      * Create and initialize a new seat.
      */
     seat_t(wl_display *display, std::string name);

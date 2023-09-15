@@ -35,7 +35,7 @@ wf::touch_interface_t::touch_interface_t(wlr_cursor *cursor, wlr_seat *seat,
             handle_touch_down(ev->touch_id, ev->time_msec, point, mode);
         }
 
-        wlr_idle_notify_activity(wf::get_core().protocols.idle, wf::get_core().get_current_seat());
+        wf::get_core().seat->notify_activity();
         emit_device_post_event_signal(ev);
     });
 
@@ -48,8 +48,7 @@ wf::touch_interface_t::touch_interface_t(wlr_cursor *cursor, wlr_seat *seat,
             handle_touch_up(ev->touch_id, ev->time_msec, mode);
         }
 
-        wlr_idle_notify_activity(wf::get_core().protocols.idle,
-            wf::get_core().get_current_seat());
+        wf::get_core().seat->notify_activity();
         emit_device_post_event_signal(ev);
     });
 
@@ -70,7 +69,7 @@ wf::touch_interface_t::touch_interface_t(wlr_cursor *cursor, wlr_seat *seat,
             handle_touch_motion(ev->touch_id, ev->time_msec, point, true, mode);
         }
 
-        wlr_idle_notify_activity(wf::get_core().protocols.idle, wf::get_core().get_current_seat());
+        wf::get_core().seat->notify_activity();
         emit_device_post_event_signal(ev);
     });
 
@@ -87,8 +86,7 @@ wf::touch_interface_t::touch_interface_t(wlr_cursor *cursor, wlr_seat *seat,
     on_frame.set_callback([&] (void*)
     {
         wlr_seat_touch_notify_frame(wf::get_core().get_current_seat());
-        wlr_idle_notify_activity(wf::get_core().protocols.idle,
-            wf::get_core().get_current_seat());
+        wf::get_core().seat->notify_activity();
     });
 
     on_up.connect(&cursor->events.touch_up);

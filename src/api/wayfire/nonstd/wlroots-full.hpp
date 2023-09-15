@@ -24,6 +24,7 @@ extern "C"
 #define static
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/render/wlr_renderer.h>
+#include <wlr/render/swapchain.h>
 #include <wlr/render/allocator.h>
 #include <wlr/render/gles2.h>
 #include <wlr/render/egl.h>
@@ -32,7 +33,7 @@ extern "C"
 #include <wlr/types/wlr_buffer.h>
 #include <wlr/types/wlr_viewporter.h>
 
-#include <wlr/types/wlr_output_damage.h>
+#include <wlr/types/wlr_damage_ring.h>
 #include <wlr/types/wlr_presentation_time.h>
 #include <wlr/util/region.h>
 #include <wlr/types/wlr_screencopy_v1.h>
@@ -117,7 +118,6 @@ extern "C"
 #include <wlr/types/wlr_switch.h>
 #include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_pointer_gestures_v1.h>
-#include <wlr/types/wlr_idle.h>
 #include <wlr/interfaces/wlr_keyboard.h>
 #include <wlr/types/wlr_touch.h>
 #include <wlr/types/wlr_pointer_gestures_v1.h>
@@ -125,6 +125,7 @@ extern "C"
 #include <wlr/types/wlr_data_control_v1.h>
 #include <wlr/types/wlr_virtual_keyboard_v1.h>
 #include <wlr/types/wlr_virtual_pointer_v1.h>
+#include <wlr/types/wlr_idle_notify_v1.h>
 #include <wlr/types/wlr_idle_inhibit_v1.h>
 #include <wlr/types/wlr_input_inhibitor.h>
 #define delete delete_

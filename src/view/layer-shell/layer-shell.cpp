@@ -414,8 +414,8 @@ wayfire_layer_shell_view::wayfire_layer_shell_view(wlr_layer_surface_v1 *lsurf) 
         wf_layer_shell_manager::get_instance().arrange_unmapped_view(this);
     });
 
-    on_map.connect(&lsurface->events.map);
-    on_unmap.connect(&lsurface->events.unmap);
+    on_map.connect(&lsurface->surface->events.map);
+    on_unmap.connect(&lsurface->surface->events.unmap);
     on_new_popup.connect(&lsurface->events.new_popup);
     on_commit_unmapped.connect(&lsurface->surface->events.commit);
 }
@@ -674,7 +674,7 @@ void wf::init_layer_shell()
 {
     static wf::wl_listener_wrapper on_created;
 
-    layer_shell_handle = wlr_layer_shell_v1_create(wf::get_core().display);
+    layer_shell_handle = wlr_layer_shell_v1_create(wf::get_core().display, 4);
     if (layer_shell_handle)
     {
         on_created.set_callback([] (void *data)

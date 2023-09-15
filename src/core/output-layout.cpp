@@ -220,9 +220,11 @@ struct output_layout_output_t
     wlr_output *handle;
     output_state_t current_state;
     bool is_externally_managed = false;
+    bool is_nested_compositor  = false;
+    bool inhibited = false;
 
     std::unique_ptr<wf::output_impl_t> output;
-    wl_listener_wrapper on_destroy, on_mode;
+    wl_listener_wrapper on_destroy, on_commit;
 
     std::shared_ptr<wf::config::section_t> config_section;
     wf::option_wrapper_t<wf::output_config::mode_t> mode_opt;
@@ -249,7 +251,7 @@ struct output_layout_output_t
         on_destroy.connect(&handle->events.destroy);
         initialize_config_options();
 
-        bool is_nested_compositor = wlr_output_is_wl(handle);
+        is_nested_compositor = wlr_output_is_wl(handle);
 
 #if WLR_HAS_X11_BACKEND
         is_nested_compositor |= wlr_output_is_x11(handle);
@@ -258,11 +260,21 @@ struct output_layout_output_t
         {
             /* Nested backends can be resized by the user. We need to handle
              * these cases */
-            on_mode.set_callback([=] (void *data)
+            on_commit.set_callback([=] (void *data)
             {
-                handle_mode_changed();
+                wlr_output_event_commit *ev = static_cast<wlr_output_event_commit*>(data);
+                if (!ev)
+                {
+                    return;
+                }
+
+                auto state = ev->state;
+                if (state->committed & WLR_OUTPUT_STATE_MODE)
+                {
+                    handle_mode_changed();
+                }
             });
-            on_mode.connect(&handle->events.mode);
+            on_commit.connect(&handle->events.commit);
         }
     }
 
@@ -319,7 +331,7 @@ struct output_layout_output_t
         wlr_output_mode default_mode;
         auto width   = handle->width > 0 ? handle->width : 1200;
         auto height  = handle->height > 0 ? handle->height : 720;
-        auto refresh = handle->refresh > 0 ? handle->refresh : 60000;
+        auto refresh = handle->refresh > 0 ? handle->refresh : 0;
 
         default_mode.width   = width;
         default_mode.height  = height;
@@ -678,21 +690,24 @@ struct output_layout_output_t
         on_mirrored_frame.set_callback([=] (void *data)
         {
             auto ev = (wlr_output_event_commit*)data;
+            if (!ev || !ev->state || !ev->state->buffer)
+            {
+                return;
+            }
 
-            if (ev->buffer)
+            if (ev->state->buffer)
             {
                 if (source_back_buffer)
                 {
                     wlr_buffer_unlock(source_back_buffer);
                 }
 
-                source_back_buffer = ev->buffer;
-                wlr_buffer_lock(ev->buffer);
+                source_back_buffer = ev->state->buffer;
+                wlr_buffer_lock(ev->state->buffer);
             }
 
             /* The mirrored output was repainted, schedule repaint
              * for us as well */
-            wlr_output_damage_whole(handle);
             wlr_output_schedule_frame(handle);
         });
         on_mirrored_frame.connect(&wo->handle->events.commit);
@@ -796,8 +811,13 @@ struct output_layout_output_t
             return;
         }
 
-        set_enabled(!(state.source & OUTPUT_IMAGE_SOURCE_NONE));
+        if (!(is_nested_compositor && output))
+        {
+            set_enabled(!(state.source & OUTPUT_IMAGE_SOURCE_NONE));
+        }
+
         apply_mode(state.mode);
+
         if (state.source & OUTPUT_IMAGE_SOURCE_SELF)
         {
             if (handle->transform != state.transform)
@@ -1471,6 +1491,26 @@ class output_layout_t::impl
             (ev->mode == ZWLR_OUTPUT_POWER_V1_MODE_ON ?
                 OUTPUT_IMAGE_SOURCE_SELF : OUTPUT_IMAGE_SOURCE_DPMS);
         apply_configuration(config);
+
+        for (auto& output : outputs)
+        {
+            if (ev->output != output.first)
+            {
+                continue;
+            }
+
+            if ((ev->mode == ZWLR_OUTPUT_POWER_V1_MODE_ON) && output.second->inhibited)
+            {
+                output.second->inhibited = false;
+                output.second->output->render->add_inhibit(output.second->inhibited);
+            } else if ((ev->mode == ZWLR_OUTPUT_POWER_V1_MODE_OFF) && !output.second->inhibited)
+            {
+                output.second->inhibited = true;
+                output.second->output->render->add_inhibit(output.second->inhibited);
+            }
+
+            output.second->output->render->damage_whole();
+        }
     }
 
     /* Public API functions */

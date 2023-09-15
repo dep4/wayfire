@@ -46,10 +46,9 @@ wf::keyboard_focus_node_t wf::layer_shell_node_t::keyboard_refocus(wf::output_t 
     // have focus, or when they have an active grab.
     if (auto surf = view->get_wlr_surface())
     {
-        if (wlr_surface_is_layer_surface(surf))
+        if (wlr_layer_surface_v1 *layer_surface = wlr_layer_surface_v1_try_from_wlr_surface(surf))
         {
-            auto lsurf = wlr_layer_surface_v1_from_wlr_surface(surf);
-            if (lsurf->current.keyboard_interactive ==
+            if (layer_surface->current.keyboard_interactive ==
                 ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE)
             {
                 // Active grab

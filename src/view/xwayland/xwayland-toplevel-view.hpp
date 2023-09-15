@@ -174,7 +174,6 @@ class wayfire_xwayland_view : public wf::toplevel_view_interface_t, public wayfi
     wayfire_xwayland_view(wlr_xwayland_surface *xww) :
         wayfire_xwayland_view_internal_base(xww)
     {
-        LOGE("new xwayland surface ", xw->title, " class: ", xw->class_t, " instance: ", xw->instance);
         this->toplevel = std::make_shared<wf::xw::xwayland_toplevel_t>(xw);
         toplevel->connect(&on_toplevel_applied);
         this->priv->toplevel = toplevel;

@@ -176,6 +176,13 @@ wf::input_manager_t::input_manager_t()
     wf::get_core().output_layout->connect(&output_added);
 }
 
+void wf::input_manager_t::send_inhibit_changed_signal(int ref_count)
+{
+    wf::input_inhibit_changed_signal data;
+    data.inhibit = (ref_count != 0);
+    wf::get_core().emit(&data);
+}
+
 void wf::input_manager_t::set_exclusive_focus(wl_client *client)
 {
     exclusive_client = client;
