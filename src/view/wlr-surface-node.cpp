@@ -2,16 +2,21 @@
 #include "pixman.h"
 #include "view/view-impl.hpp"
 #include "wayfire/geometry.hpp"
+#include "wayfire/opengl.hpp"
+#include "wayfire/region.hpp"
 #include "wayfire/render-manager.hpp"
 #include "wayfire/scene-render.hpp"
 #include "wayfire/scene.hpp"
 #include "wlr-surface-pointer-interaction.hpp"
 #include "wlr-surface-touch-interaction.cpp"
+#include <GLES3/gl3.h>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <wayfire/signal-provider.hpp>
 #include <wlr/util/box.h>
+
+extern bool disable_gl_call;
 
 wf::scene::surface_state_t::surface_state_t(surface_state_t&& other)
 {
@@ -214,6 +219,48 @@ void wf::scene::wlr_surface_node_t::send_frame_done(bool delay_until_vblank)
     }
 }
 
+static const char *batch_vs =
+    R"(#version 320 es
+
+in mediump vec2 base_model;
+
+in mediump vec4 position;
+in mediump vec4 in_uvpos;
+
+in uint in_texid;
+
+out mediump vec2 uvpos;
+flat out uint texid;
+
+void main() {
+    gl_Position = vec4(base_model * position.xy + position.zw, 0.0, 1.0);
+    uvpos = base_model * in_uvpos.xy + in_uvpos.zw;
+    texid = in_texid;
+})";
+
+static const char *batch_fs =
+    R"(#version 320 es
+
+uniform sampler2D textures[8];
+in mediump vec2 uvpos;
+flat in uint texid;
+
+layout(location = 0) out mediump vec4 fragcolor;
+
+void main() {
+    if (texid == 0u) {
+        fragcolor = vec4(1.0, 0.0, 0.0, 1.0) * vec4(uvpos, 0.0, 1.0);
+    } else {
+        fragcolor = vec4(1.0, 1.0, 0.0, 1.0) * vec4(uvpos, 0.0, 1.0);
+    }
+
+    //fragcolor = vec4(uvpos, 0.0, 1.0);
+
+    fragcolor = texture2D(textures[texid], uvpos);
+})";
+
+OpenGL::program_t batch_prog;
+
 class wf::scene::wlr_surface_node_t::wlr_surface_render_instance_t : public render_instance_t
 {
     std::shared_ptr<wlr_surface_node_t> self;
@@ -295,34 +342,7 @@ class wf::scene::wlr_surface_node_t::wlr_surface_render_instance_t : public rend
     }
 
     void render(const wf::render_target_t& target, const wf::region_t& region) override
-    {
-        if (!self->current_state.current_buffer)
-        {
-            return;
-        }
-
-        wf::geometry_t geometry = self->get_bounding_box();
-        wf::texture_t texture{self->current_state.texture, self->current_state.src_viewport};
-
-        OpenGL::render_begin(target);
-        OpenGL::render_texture(texture, target, geometry, glm::vec4(1.f), OpenGL::RENDER_FLAG_CACHED);
-        // use GL_NEAREST for integer scale.
-        // GL_NEAREST makes scaled text blocky instead of blurry, which looks better
-        // but only for integer scale.
-        if (target.scale - floor(target.scale) < 0.001)
-        {
-            GL_CALL(glTexParameteri(texture.target, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
-        }
-
-        for (const auto& rect : region)
-        {
-            target.logic_scissor(wlr_box_from_pixman_box(rect));
-            OpenGL::draw_cached();
-        }
-
-        OpenGL::clear_cached();
-        OpenGL::render_end();
-    }
+    {}
 
     void presentation_feedback(wf::output_t *output) override
     {
@@ -386,6 +406,214 @@ class wf::scene::wlr_surface_node_t::wlr_surface_render_instance_t : public rend
             output->connect(&on_frame_done);
             // TODO: compute actually visible region and disable damage reporting for that region.
         }
+    }
+
+    class wlr_surface_batch : public wf::scene::render_batch_t
+    {
+      public:
+        GLuint fb;
+
+        wlr_surface_batch(GLuint fb)
+        {
+            this->fb = fb;
+
+            static int count = 0;
+            if (count == 0)
+            {
+                batch_prog.set_simple(OpenGL::compile_program(batch_vs, batch_fs));
+                count = 1;
+            }
+
+            // std::_Exit(-1);
+        }
+
+        void submit()
+        {
+            // We don't expect any errors from us!
+            // disable_gl_call = true;
+
+            int changes = 0;
+            std::map<GLuint, GLuint> bound_textures;
+            std::vector<GLfloat> vertexData;
+            std::vector<GLfloat> coordData;
+            std::vector<GLuint> texData;
+
+            for (auto& i : instructions)
+            {
+                auto self = dynamic_cast<wlr_surface_render_instance_t*>(i.instance)->self;
+                if (!self->current_state.current_buffer)
+                {
+                    continue;
+                }
+
+                wf::geometry_t geometry = self->get_bounding_box();
+                i.damage &= geometry;
+
+                wf::texture_t tex{self->current_state.texture, self->current_state.src_viewport};
+
+                GLuint tex_id;
+                if (bound_textures.count(tex.tex_id))
+                {
+                    tex_id = bound_textures[tex.tex_id];
+                } else
+                {
+                    auto size = bound_textures.size();
+                    bound_textures[tex.tex_id] = size;
+                    tex_id = size;
+                }
+
+                glm::mat4 matrix = i.target.get_orthographic_projection();
+                for (const auto& rect : i.damage)
+                {
+                    glm::vec4 xy   = matrix * glm::vec4(1.0 * rect.x1, 1.0 * rect.y1, 0.0, 1.0);
+                    glm::vec4 xywh = matrix * glm::vec4(1.0 * rect.x2, 1.0 * rect.y2, 0.0, 1.0);
+
+                    // Calculate a triangle strip:
+                    // 4 - 3
+                    // |   |
+                    // 1 - 2
+
+                    vertexData.insert(vertexData.end(), {
+                        xywh.x - xy.x, xy.y - xywh.y,
+                        xy.x, xywh.y,
+                    });
+
+                    // vertexData.insert(vertexData.end(), {
+                    // xy.x, xywh.y,
+                    // xywh.x, xywh.y,
+                    // xywh.x, xy.y,
+                    // xy.x, xy.y,
+                    // });
+
+                    // from bottom left to top right
+                    gl_geometry tex_g = {
+                        .x1 = 1.0f * (rect.x1 - geometry.x) / geometry.width,
+                        .y1 = 1.0f * (geometry.y + geometry.height - rect.y2) / geometry.height,
+                        .x2 = 1.0f * (rect.x2 - geometry.x) / geometry.width,
+                        .y2 = 1.0f * (geometry.y + geometry.height - rect.y1) / geometry.height,
+                    };
+
+                    if (tex.invert_y)
+                    {
+                        tex_g.y1 = 1 - tex_g.y1;
+                        tex_g.y2 = 1 - tex_g.y2;
+                    }
+
+                    // LOGI("Rendering ", geometry, " ", wlr_box_from_pixman_box(rect), " ",
+                    // tex_g.x1, " ", tex_g.y1, " ", tex_g.x2, " ", tex_g.y2);
+
+                    // LOGI(std::abs(tex_g.x1 - tex_g.x2), " ", std::abs(tex_g.y1 - tex_g.y2), " ",
+                    // (tex_g.x1 + tex_g.x2) / 2.0f, " ", (tex_g.y1 + tex_g.y2) / 2.0f);
+
+                    coordData.insert(coordData.end(), {
+                        tex_g.x2 - tex_g.x1, tex_g.y2 - tex_g.y1,
+                        tex_g.x1, tex_g.y1,
+                    });
+
+                    // coordData.insert(coordData.end(), {
+                    // tex_g.x1, tex_g.y1,
+                    // tex_g.x2, tex_g.y1,
+                    // tex_g.x2, tex_g.y2,
+                    // tex_g.x1, tex_g.y2,
+                    // });
+
+                    texData.push_back(tex_id);
+                    // texData.push_back(tex_id);
+                    // texData.push_back(tex_id);
+                    // texData.push_back(tex_id);
+                }
+            }
+
+            OpenGL::render_begin(instructions[0].target);
+            GL_CALL(glEnable(GL_BLEND));
+            GL_CALL(glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA));
+
+            batch_prog.use(TEXTURE_TYPE_RGBA);
+            for (auto [tex, id] : bound_textures)
+            {
+                GL_CALL(glActiveTexture(GL_TEXTURE0 + id));
+                GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
+                GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
+            }
+
+            for (int i = 0; i < 8; i++)
+            {
+                std::string name = "textures[" + std::to_string(i) + "]";
+                batch_prog.uniform1i(name, i);
+            }
+
+            static const GLfloat base_model[] = {
+                0, 0,
+                1, 0,
+                1, 1,
+                0, 1,
+            };
+
+            batch_prog.attrib_pointer("base_model", 2, 0, base_model);
+
+            batch_prog.attrib_pointer("position", 4, 0, vertexData.data());
+            batch_prog.attrib_pointer("in_uvpos", 4, 0, coordData.data());
+            batch_prog.attrib_ipointer("in_texid", 1, 0, texData.data(), GL_UNSIGNED_INT);
+
+            batch_prog.attrib_divisor("position", 1);
+            batch_prog.attrib_divisor("in_uvpos", 1);
+            batch_prog.attrib_divisor("in_texid", 1);
+
+            GL_CALL(glDrawArraysInstanced(GL_TRIANGLE_FAN, 0, 4, texData.size()));
+
+            // Unset textures
+            for (auto [tex, id] : bound_textures)
+            {
+                GL_CALL(glActiveTexture(GL_TEXTURE0 + id));
+                GL_CALL(glBindTexture(GL_TEXTURE_2D, 0));
+            }
+
+            GL_CALL(glActiveTexture(GL_TEXTURE0));
+
+            OpenGL::render_end();
+            LOGI("Batch changed ", changes);
+        }
+
+        void add(wlr_surface_render_instance_t *rinst, scene::render_instruction_t& instr)
+        {
+            instructions.push_back(instr);
+        }
+
+        std::vector<scene::render_instruction_t> instructions;
+    };
+
+    bool can_batch() override
+    {
+        return true;
+    }
+
+    std::unique_ptr<render_batch_t> start_batch(scene::render_instruction_t& instr) override
+    {
+        auto batch = std::make_unique<wlr_surface_batch>(instr.target.fb);
+        batch->add(this, instr);
+        return batch;
+    }
+
+    bool try_add_to_batch(render_batch_t *batch, scene::render_instruction_t& instr) override
+    {
+        if (auto vbatch = dynamic_cast<wlr_surface_batch*>(batch))
+        {
+            if (vbatch->fb != instr.target.fb)
+            {
+                return false;
+            }
+
+            wf::texture_t tex{self->current_state.texture, self->current_state.src_viewport};
+            if (tex.type != TEXTURE_TYPE_RGBA)
+            {
+                return false;
+            }
+
+            vbatch->add(this, instr);
+            return true;
+        }
+
+        return false;
     }
 };
 

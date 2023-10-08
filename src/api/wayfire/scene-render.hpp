@@ -53,6 +53,13 @@ struct render_instruction_t
     std::any data = {};
 };
 
+class render_batch_t
+{
+  public:
+    virtual ~render_batch_t() = default;
+    virtual void submit()     = 0;
+};
+
 /**
  * When (parts) of the scenegraph have to be rendered, they have to be
  * 'instantiated' first. The instantiation of a (sub)tree of the scenegraph
@@ -155,6 +162,10 @@ class render_instance_t
      */
     virtual void compute_visibility(wf::output_t *output, wf::region_t& visible)
     {}
+
+    virtual bool can_batch();
+    virtual std::unique_ptr<render_batch_t> start_batch(render_instruction_t& instruction);
+    virtual bool try_add_to_batch(render_batch_t *batch, render_instruction_t& instruction);
 };
 
 using render_instance_uptr = std::unique_ptr<render_instance_t>;

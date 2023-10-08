@@ -103,11 +103,14 @@ class workspace_stream_node_t::workspace_stream_instance_t : public scene::
             damage ^= bbox; // Subtract the workspace because it will be filled
                             // with the background color, so nothing below it
                             // should be repainted anyway.
-            instructions.push_back(scene::render_instruction_t{
-                    .instance = this,
-                    .target   = target,
-                    .damage   = our_damage,
-                });
+            if (!our_damage.empty())
+            {
+                instructions.push_back(scene::render_instruction_t{
+                        .instance = this,
+                        .target   = target,
+                        .damage   = our_damage,
+                    });
+            }
         }
     }
 

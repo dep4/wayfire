@@ -396,6 +396,9 @@ class program_t
     void attrib_pointer(const std::string& attrib,
         int size, int stride, const void *ptr, GLenum type = GL_FLOAT);
 
+    void attrib_ipointer(const std::string& attrib, int size, int stride,
+        const void *ptr, GLenum type = GL_FLOAT);
+
     /*
      * Set the attrib divisor. Analogous to glVertexAttribDivisor().
      *
@@ -420,6 +423,8 @@ class program_t
     class impl;
     std::unique_ptr<impl> priv;
 };
+
+program_t& default_program();
 }
 
 /* utils */

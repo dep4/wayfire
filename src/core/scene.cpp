@@ -513,5 +513,29 @@ floating_inner_node_t::~floating_inner_node_t()
         node->_parent = nullptr;
     }
 }
+
+class invalid_render_batch_t : public render_batch_t
+{
+  public:
+    virtual void submit()
+    {}
+};
+
+std::unique_ptr<render_batch_t> scene::render_instance_t::start_batch(scene::render_instruction_t& instr)
+{
+    wf::dassert(false, "by default, start_batch should not be called!");
+    return std::unique_ptr<invalid_render_batch_t>();
+}
+
+bool scene::render_instance_t::try_add_to_batch(render_batch_t *batch, scene::render_instruction_t& instr)
+{
+    wf::dassert(false, "by default, try_add_to_batch should not be called!");
+    return false;
+}
+
+bool scene::render_instance_t::can_batch()
+{
+    return false;
+}
 } // namespace scene
 }

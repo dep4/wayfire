@@ -32,7 +32,7 @@ const char *gl_error_string(const GLenum err)
     return "UNKNOWN GL ERROR";
 }
 
-static bool disable_gl_call = false;
+bool disable_gl_call = false;
 void gl_call(const char *func, uint32_t line, const char *glfunc)
 {
     GLenum err;
@@ -776,6 +776,16 @@ void program_t::attrib_pointer(const std::string& attrib,
     GL_CALL(glVertexAttribPointer(loc, size, type, GL_FALSE, stride, ptr));
 }
 
+void program_t::attrib_ipointer(const std::string& attrib, int size, int stride,
+    const void *ptr, GLenum type)
+{
+    int loc = priv->find_attrib_loc(attrib);
+    priv->active_attrs.insert(loc);
+
+    GL_CALL(glEnableVertexAttribArray(loc));
+    GL_CALL(glVertexAttribIPointer(loc, size, type, stride, ptr));
+}
+
 void program_t::attrib_divisor(const std::string& attrib, int divisor)
 {
     int loc = priv->find_attrib_loc(attrib);
@@ -826,4 +836,9 @@ void program_t::deactivate()
     priv->active_attrs.clear();
     GL_CALL(glUseProgram(0));
 }
+
+program_t& default_program()
+{
+    return program;
 }
+} // namespace OpenGL

@@ -1002,6 +1002,45 @@ class wf::render_manager::impl
     }
 };
 
+static void run_render_instructions(std::vector<scene::render_instruction_t>& instructions)
+{
+    std::unique_ptr<scene::render_batch_t> current_batch;
+    int batches     = 0;
+    int not_batched = 0;
+
+    const auto& submit_batch_reset = [&] ()
+    {
+        if (current_batch)
+        {
+            ++batches;
+            current_batch->submit();
+        }
+
+        current_batch.reset();
+    };
+
+    for (auto& instr : wf::reverse(instructions))
+    {
+        auto rinstance = instr.instance;
+        if (!rinstance->can_batch())
+        {
+            submit_batch_reset();
+            rinstance->render(instr.target, instr.damage, instr.data);
+            ++not_batched;
+            continue;
+        }
+
+        if (!current_batch || !rinstance->try_add_to_batch(current_batch.get(), instr))
+        {
+            submit_batch_reset();
+            current_batch = rinstance->start_batch(instr);
+        }
+    }
+
+    submit_batch_reset();
+    LOGI("instructions: ", instructions.size(), " batches: ", batches, " not batched: ", not_batched);
+}
+
 wf::region_t scene::run_render_pass(
     const render_pass_params_t& params, uint32_t flags)
 {
@@ -1038,10 +1077,10 @@ wf::region_t scene::run_render_pass(
     }
 
     // Render instances
-    for (auto& instr : wf::reverse(instructions))
+    run_render_instructions(instructions);
+    if (params.reference_output)
     {
-        instr.instance->render(instr.target, instr.damage, instr.data);
-        if (params.reference_output)
+        for (auto& instr : instructions)
         {
             instr.instance->presentation_feedback(params.reference_output);
         }

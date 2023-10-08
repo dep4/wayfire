@@ -318,6 +318,9 @@ class workspace_wall_t : public wf::signal::provider_t
                     workspaces_damage |= scale_box(A, B, box);
                 }
 
+                std::vector<wf::scene::render_instruction_t> views;
+                std::vector<wf::scene::render_instruction_t> dims;
+
                 for (int i = 0; i < (int)self->workspaces.size(); i++)
                 {
                     for (int j = 0; j < (int)self->workspaces[i].size(); j++)
@@ -341,8 +344,7 @@ class workspace_wall_t : public wf::signal::provider_t
                         workspaces_damage ^= our_damage;
                         our_damage += -wf::origin(workspace_rect);
 
-                        // Dim workspaces at the end (the first instruction pushed is executed last)
-                        instructions.push_back(scene::render_instruction_t{
+                        dims.push_back(scene::render_instruction_t{
                                 .instance = this,
                                 .target   = our_target,
                                 .damage   = our_damage,
@@ -350,13 +352,17 @@ class workspace_wall_t : public wf::signal::provider_t
                                     self->wall->get_color_for_workspace({i, j})},
                             });
 
-                        // Render the workspace contents first
                         for (auto& ch : instances[i][j])
                         {
-                            ch->schedule_instructions(instructions, our_target, our_damage);
+                            ch->schedule_instructions(views, our_target, our_damage);
                         }
                     }
                 }
+
+                // Dim workspaces at the end (the first instruction pushed is executed last)
+                // Render the workspace contents first
+                instructions.insert(instructions.end(), views.begin(), views.end());
+                instructions.insert(instructions.end(), dims.begin(), dims.end());
 
                 auto bbox = self->get_bounding_box();
 
