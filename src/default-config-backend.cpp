@@ -16,18 +16,17 @@
 static std::string config_dir, config_file;
 wf::config::config_manager_t *cfg_manager;
 
-static int wd_cfg_file;
+static int wd_cfg_dir, wd_cfg_file;
 
-static void readd_watch(int fd)
+static void add_watch(int fd)
 {
-    inotify_add_watch(fd, config_dir.c_str(), IN_CREATE);
+    wd_cfg_dir  = inotify_add_watch(fd, config_dir.c_str(), IN_CREATE);
     wd_cfg_file = inotify_add_watch(fd, config_file.c_str(), IN_CLOSE_WRITE);
 }
 
 static void reload_config(int fd)
 {
     wf::config::load_configuration_options_from_file(*cfg_manager, config_file);
-    readd_watch(fd);
 }
 
 static int handle_config_updated(int fd, uint32_t mask, void *data)
@@ -52,9 +51,7 @@ static int handle_config_updated(int fd, uint32_t mask, void *data)
         return 0;
     }
 
-    const auto last_slash = config_file.find_last_of('/');
-    const auto cfg_file_basename = (last_slash == std::string::npos) ?
-        config_file : config_file.substr(last_slash);
+    const auto cfg_file_basename = std::filesystem::path(config_file).filename().string();
 
     for (char *ptr = buf;
          ptr < (buf + len);
@@ -67,6 +64,13 @@ static int handle_config_updated(int fd, uint32_t mask, void *data)
         // - Config file was created inside parent directory
         should_reload |=
             (event->wd == wd_cfg_file) || (cfg_file_basename == event->name);
+
+        if ((event->name == cfg_file_basename) && (event->wd == wd_cfg_dir))
+        {
+            inotify_rm_watch(fd, wd_cfg_file);
+            wd_cfg_file =
+                inotify_add_watch(fd, (config_dir + "/" + cfg_file_basename).c_str(), IN_CLOSE_WRITE);
+        }
     }
 
     if (should_reload)
@@ -76,9 +80,6 @@ static int handle_config_updated(int fd, uint32_t mask, void *data)
         reload_config(fd);
         wf::reload_config_signal ev;
         wf::get_core().emit(&ev);
-    } else
-    {
-        readd_watch(fd);
     }
 
     return 0;
@@ -107,6 +108,7 @@ class dynamic_ini_config_t : public wf::config_backend_t
 
         int inotify_fd = inotify_init1(IN_CLOEXEC);
         reload_config(inotify_fd);
+        add_watch(inotify_fd);
 
         wl_event_loop_add_fd(wl_display_get_event_loop(display),
             inotify_fd, WL_EVENT_READABLE, handle_config_updated, NULL);
