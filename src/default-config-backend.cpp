@@ -8,6 +8,7 @@
 #include <wayfire/core.hpp>
 
 #include <sys/inotify.h>
+#include <filesystem>
 #include <unistd.h>
 
 #define INOT_BUF_SIZE (sizeof(inotify_event) + NAME_MAX + 1)
@@ -96,6 +97,8 @@ class dynamic_ini_config_t : public wf::config_backend_t
         cfg_manager = &config;
 
         config_file = choose_cfg_file(cfg_file);
+        std::filesystem::path path = std::filesystem::absolute(config_file);
+        config_dir = path.parent_path();
         LOGI("Using config file: ", config_file.c_str());
         setenv(CONFIG_FILE_ENV, config_file.c_str(), 1);
 
@@ -129,14 +132,9 @@ class dynamic_ini_config_t : public wf::config_backend_t
             return env_cfg_file;
         }
 
-        // Fallback, default config file
-        config_dir = nonull(getenv("XDG_CONFIG_HOME"));
-        if (!config_dir.compare("nil"))
-        {
-            config_dir = std::string(nonull(getenv("HOME"))) + "/.config";
-        }
-
-        return config_dir + "/wayfire.ini";
+        return (getenv("XDG_CONFIG_HOME") ?:
+            (std::string(nonull(getenv("HOME"))) + "/.config")) +
+               "/wayfire.ini";
     }
 };
 }
