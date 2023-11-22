@@ -19,6 +19,6 @@ class idle_inhibitor_t
 
   private:
     static unsigned int inhibitors;
-    void notify_wlroots();
+    void notify_update();
 };
 }

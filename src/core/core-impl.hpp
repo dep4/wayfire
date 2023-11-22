@@ -74,8 +74,6 @@ class compositor_core_impl_t : public compositor_core_t
     wf::wl_listener_wrapper vptr_created;
     wf::wl_listener_wrapper input_inhibit_activated;
     wf::wl_listener_wrapper input_inhibit_deactivated;
-    wf::wl_listener_wrapper idle_inhibitor_new;
-    wf::wl_listener_wrapper idle_inhibitor_destroy;
     wf::wl_listener_wrapper pointer_constraint_added;
     wf::wl_listener_wrapper idle_inhibitor_created;
     std::shared_ptr<scene::root_node_t> scene_root;
