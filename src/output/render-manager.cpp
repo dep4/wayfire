@@ -167,13 +167,12 @@ struct output_damage_t
     struct frame_object_t
     {
         wlr_output_state state;
-        wlr_buffer *buffer;
+        wlr_buffer *buffer = NULL;
         int buffer_age;
 
         frame_object_t()
         {
-            memset(&state, 0, sizeof(wlr_output_state));
-            pixman_region32_init(&state.damage);
+            wlr_output_state_init(&state);
         }
 
         ~frame_object_t()
@@ -181,7 +180,7 @@ struct output_damage_t
             wlr_output_state_finish(&state);
         }
 
-        wlr_render_pass *render_pass;
+        wlr_render_pass *render_pass = NULL;
 
         frame_object_t(const frame_object_t&) = delete;
         frame_object_t(frame_object_t&&) = delete;
