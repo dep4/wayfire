@@ -124,7 +124,6 @@ class wayfire_cube : public wf::per_output_plugin_instance_t, public wf::pointer
                 }
 
                 self->cube->render(target.translated(-wf::origin(self->get_bounding_box())), framebuffers);
-                wf::scene::damage_node(self, self->get_bounding_box());
             }
 
             void compute_visibility(wf::output_t *output, wf::region_t& visible) override
@@ -664,6 +663,7 @@ class wayfire_cube : public wf::per_output_plugin_instance_t, public wf::pointer
     wf::effect_hook_t pre_hook = [=] ()
     {
         update_view_matrix();
+        wf::scene::damage_node(render_node, render_node->get_bounding_box());
         if (animation.cube_animation.running())
         {
             output->render->schedule_redraw();
