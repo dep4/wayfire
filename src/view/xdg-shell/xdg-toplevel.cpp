@@ -5,9 +5,11 @@
 #include <wlr/util/edges.h>
 #include "wayfire/geometry.hpp"
 #include "wayfire/scene-render.hpp"
+#include "wayfire/toplevel-view.hpp"
 #include "wayfire/toplevel.hpp"
 #include "wayfire/txn/transaction-object.hpp"
 #include "../view-impl.hpp"
+#include "xdg-shell-protocol.h"
 
 wf::xdg_toplevel_t::xdg_toplevel_t(wlr_xdg_toplevel *toplevel,
     std::shared_ptr<wf::scene::wlr_surface_node_t> main_surface)
@@ -76,8 +78,16 @@ void wf::xdg_toplevel_t::commit()
     {
         wait_for_client = true;
         wlr_xdg_toplevel_set_tiled(this->toplevel, _pending.tiled_edges);
-        this->target_configure =
-            wlr_xdg_toplevel_set_maximized(this->toplevel, (_pending.tiled_edges == wf::TILED_EDGES_ALL));
+
+        auto version = wl_resource_get_version(toplevel->resource);
+        if (version >= XDG_TOPLEVEL_STATE_TILED_LEFT_SINCE_VERSION)
+        {
+            this->target_configure =
+                wlr_xdg_toplevel_set_maximized(this->toplevel, (_pending.tiled_edges == TILED_EDGES_ALL));
+        } else
+        {
+            this->target_configure = wlr_xdg_toplevel_set_maximized(this->toplevel, !!_pending.tiled_edges);
+        }
     }
 
     if (_current.fullscreen != _pending.fullscreen)
