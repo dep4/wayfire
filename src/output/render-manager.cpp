@@ -1,4 +1,5 @@
 #include "wayfire/render-manager.hpp"
+#include "pixman.h"
 #include "view/view-impl.hpp"
 #include "wayfire/core.hpp"
 #include "wayfire/debug.hpp"
@@ -79,10 +80,11 @@ struct output_damage_t
             update_scenegraph(data->flags);
         };
 
-        wlr_damage_ring_init(&damage_ring);
         root->connect<scene::root_node_update_signal>(&root_update);
         update_scenegraph(scene::update_flag::CHILDREN_LIST);
         output->connect(&output_mode_changed);
+
+        wlr_damage_ring_init(&damage_ring);
         int width, height;
         wlr_output_transformed_resolution(output->handle, &width, &height);
         wlr_damage_ring_set_bounds(&damage_ring, width, height);
@@ -139,28 +141,153 @@ struct output_damage_t
         }
     }
 
+    int constant_redraw_counter = 0;
+    void set_redraw_always(bool always)
+    {
+        constant_redraw_counter += (always ? 1 : -1);
+        if (constant_redraw_counter > 1) /* no change, exit */
+        {
+            return;
+        }
+
+        if (constant_redraw_counter < 0)
+        {
+            LOGE("constant_redraw_counter got below 0!");
+            constant_redraw_counter = 0;
+
+            return;
+        }
+
+        schedule_repaint();
+    }
+
     wf::region_t acc_damage;
 
-    /**
-     * Make the output current. This sets its EGL context as current, checks
-     * whether there is any damage and makes sure frame_damage contains all the
-     * damage needed for repainting the next frame.
-     */
-    bool force_next_frame = false;
-    bool make_current(bool& needs_swap)
+    // A struct which contains the necessary structures for painting one frame
+    struct frame_object_t
     {
-        needs_swap |= force_next_frame;
-        force_next_frame = false;
+        wlr_output_state state;
+        wlr_buffer *buffer;
+        int buffer_age;
+
+        frame_object_t()
+        {
+            memset(&state, 0, sizeof(wlr_output_state));
+            pixman_region32_init(&state.damage);
+        }
+
+        ~frame_object_t()
+        {
+            wlr_output_state_finish(&state);
+        }
+
+        wlr_render_pass *render_pass;
+
+        frame_object_t(const frame_object_t&) = delete;
+        frame_object_t(frame_object_t&&) = delete;
+        frame_object_t& operator =(const frame_object_t&) = delete;
+        frame_object_t& operator =(frame_object_t&&) = delete;
+    };
+
+    bool acquire_next_swapchain_buffer(frame_object_t& frame)
+    {
+        int width, height;
+        wlr_output_transformed_resolution(output, &width, &height);
+        wlr_region_transform(&frame.state.damage, &damage_ring.current,
+            wlr_output_transform_invert(output->transform), width, height);
+
+        if (!wlr_output_configure_primary_swapchain(output, &frame.state, &output->swapchain))
+        {
+            LOGE("Failed to configure primary output swapchain for output ", nonull(output->name));
+            return false;
+        }
+
+        frame.buffer = wlr_swapchain_acquire(output->swapchain, &frame.buffer_age);
+        if (!frame.buffer)
+        {
+            LOGE("Failed to acquire buffer from the output swapchain!");
+            return false;
+        }
 
         return true;
+    }
+
+    /**
+     * Start rendering a new frame.
+     * If the operation could not be started, or if a new frame is not needed, the function returns false.
+     * If the operation succeeds, true is returned, and the output (E)GL context is bound.
+     */
+    bool force_next_frame = false;
+    std::unique_ptr<frame_object_t> start_frame()
+    {
+        const bool needs_swap = force_next_frame | output->needs_frame |
+            pixman_region32_not_empty(&damage_ring.current) | (constant_redraw_counter > 0);
+        force_next_frame = false;
+
+        if (!needs_swap)
+        {
+            return {};
+        }
+
+        auto next_frame = std::make_unique<frame_object_t>();
+        next_frame->state.committed |= WLR_OUTPUT_STATE_DAMAGE;
+        if (!acquire_next_swapchain_buffer(*next_frame))
+        {
+            return {};
+        }
+
+        // Accumulate damage now, when we are sure we will render the frame.
+        // Doing this earlier may mean that the damage from the previous frames
+        // creeps into the current frame damage, if we had skipped a frame.
+        accumulate_damage(next_frame->buffer_age);
+
+        next_frame->render_pass = wlr_renderer_begin_buffer_pass(output->renderer, next_frame->buffer, NULL);
+        if (!next_frame->render_pass)
+        {
+            LOGE("Failed to start a render pass!");
+            wlr_buffer_unlock(next_frame->buffer);
+            return {};
+        }
+
+        return next_frame;
+    }
+
+    void swap_buffers(std::unique_ptr<frame_object_t> next_frame, const wf::region_t& swap_damage)
+    {
+        frame_damage.clear();
+
+        if (!wlr_render_pass_submit(next_frame->render_pass))
+        {
+            LOGE("Failed to submit render pass!");
+            wlr_buffer_unlock(next_frame->buffer);
+            return;
+        }
+
+        wlr_output_state_set_buffer(&next_frame->state, next_frame->buffer);
+        wlr_buffer_unlock(next_frame->buffer);
+
+        if (!wlr_output_test_state(output, &next_frame->state))
+        {
+            LOGE("Output test failed!");
+            return;
+        }
+
+        if (!wlr_output_commit_state(output, &next_frame->state))
+        {
+            LOGE("Output commit failed!");
+            return;
+        }
+
+        wlr_damage_ring_rotate(&damage_ring);
     }
 
     /**
      * Accumulate damage from last frame.
      * Needs to be called after make_current()
      */
-    void accumulate_damage()
+    void accumulate_damage(int buffer_age)
     {
+        wlr_damage_ring_get_buffer_damage(&damage_ring, buffer_age, acc_damage.to_pixman());
         frame_damage |= acc_damage;
         if (runtime_config.no_damage_track)
         {
@@ -732,6 +859,7 @@ class wf::render_manager::impl
             // https://github.com/swaywm/sway/pull/4588
             if (repaint_delay < 1)
             {
+                output->handle->frame_pending = false;
                 paint();
             } else
             {
@@ -783,26 +911,6 @@ class wf::render_manager::impl
         {
             output_damage->damage_whole_idle();
         });
-
-        output_damage->schedule_repaint();
-    }
-
-    int constant_redraw_counter = 0;
-    void set_redraw_always(bool always)
-    {
-        constant_redraw_counter += (always ? 1 : -1);
-        if (constant_redraw_counter > 1) /* no change, exit */
-        {
-            return;
-        }
-
-        if (constant_redraw_counter < 0)
-        {
-            LOGE("constant_redraw_counter got below 0!");
-            constant_redraw_counter = 0;
-
-            return;
-        }
 
         output_damage->schedule_repaint();
     }
@@ -874,8 +982,7 @@ class wf::render_manager::impl
     {
         if (runtime_config.damage_debug)
         {
-            /* Clear the screen to yellow, so that the repainted parts are
-             * visible */
+            /* Clear the screen to yellow, so that the repainted parts are visible */
             swap_damage |= output_damage->get_wlr_damage_box();
 
             OpenGL::render_begin(output->handle->width, output->handle->height,
@@ -900,6 +1007,10 @@ class wf::render_manager::impl
         swap_damage += -wf::origin(output->get_layout_geometry());
         swap_damage  = swap_damage * output->handle->scale;
         swap_damage &= output_damage->get_wlr_damage_box();
+        if (runtime_config.damage_debug)
+        {
+            swap_damage |= output_damage->get_wlr_damage_box();
+        }
     }
 
     void update_bound_output()
@@ -918,22 +1029,9 @@ class wf::render_manager::impl
      */
     void paint()
     {
-        wl_output_transform transform;
-        wlr_render_pass *render_pass;
-        wlr_output_state pending;
-        wlr_buffer *buffer;
-        int width, height;
-        bool needs_swap;
-        int buffer_age;
-
         /* Part 1: frame setup: query damage, etc. */
         effects->run_effects(OUTPUT_EFFECT_PRE);
         effects->run_effects(OUTPUT_EFFECT_DAMAGE);
-
-        memset(&pending, 0, sizeof(wlr_output_state));
-        pending.committed |= WLR_OUTPUT_STATE_DAMAGE;
-
-        output->handle->frame_pending = false;
 
         if (do_direct_scanout())
         {
@@ -942,79 +1040,30 @@ class wf::render_manager::impl
             return;
         }
 
-        if (!output_damage->make_current(needs_swap))
+        auto next_frame = output_damage->start_frame();
+        if (!next_frame)
         {
+            // Optimization: the output doesn't need a new frame (so isn't damaged), so we can
+            // just skip the whole repaint
             delay_manager->skip_frame();
-            goto finish;
+            return;
         }
 
-        if ((!needs_swap && !constant_redraw_counter) ||
-            (!output->handle->needs_frame &&
-             !pixman_region32_not_empty(&output_damage->damage_ring.current)))
-        {
-            /* Optimization: the output doesn't need a swap (so isn't damaged),
-             * and no plugin wants custom redrawing - we can just skip the whole
-             * repaint */
-            delay_manager->skip_frame();
-            goto finish;
-        }
-
-        wlr_output_transformed_resolution(output->handle, &width, &height);
-
-        pixman_region32_init(&pending.damage);
-
-        transform = wlr_output_transform_invert(output->handle->transform);
-        wlr_region_transform(&pending.damage, &output_damage->damage_ring.current,
-            transform, width, height);
-
-        if (!wlr_output_configure_primary_swapchain(output->handle, &pending, &output->handle->swapchain))
-        {
-            LOGE("!wlr_output_configure_primary_swapchain");
-            goto finish;
-        }
-
-        buffer = wlr_swapchain_acquire(output->handle->swapchain, &buffer_age);
-        if (!buffer)
-        {
-            LOGE("!buffer");
-            goto finish;
-        }
-
-        // Accumulate damage now, when we are sure we will render the frame.
-        // Doing this earlier may mean that the damage from the previous frames
-        // creeps into the current frame damage, if we had skipped a frame.
-
-        wlr_damage_ring_get_buffer_damage(&output_damage->damage_ring, buffer_age,
-            output_damage->acc_damage.to_pixman());
-        output_damage->accumulate_damage();
-
-        render_pass = wlr_renderer_begin_buffer_pass(
-            output->handle->renderer, buffer, NULL);
-        if (!render_pass)
-        {
-            LOGE("!render_pass");
-            wlr_buffer_unlock(buffer);
-            goto finish;
-        }
-
-        wlr_renderer_begin_with_buffer(output->handle->renderer, buffer);
-
+        /* Part 2: call the renderer, which sets swap_damage and draws the scenegraph */
+        wlr_renderer_begin_with_buffer(output->handle->renderer, next_frame->buffer);
         update_bound_output();
-
-        /* Part 2: call the renderer, which sets swap_damage and
-         * draws the scenegraph */
         render_output();
         wlr_renderer_end(wf::get_core().renderer);
 
         /* Part 3: overlay effects */
         effects->run_effects(OUTPUT_EFFECT_OVERLAY);
 
+        /* Part 4: finalize the scene: postprocessing effects */
         if (postprocessing->post_effects.size())
         {
             swap_damage |= output_damage->get_wlr_damage_box();
         }
 
-        /* Part 4: finalize the scene: postprocessing effects */
         postprocessing->run_post_effects();
         if (output_inhibit_counter)
         {
@@ -1028,40 +1077,13 @@ class wf::render_manager::impl
          * We render software cursors after everything else
          * for consistency with hardware cursor planes */
         OpenGL::render_begin();
-        wlr_renderer_begin_with_buffer(output->handle->renderer, buffer);
-        wlr_output_render_software_cursors(output->handle,
-            swap_damage.to_pixman());
+        wlr_renderer_begin_with_buffer(output->handle->renderer, next_frame->buffer);
+        wlr_output_render_software_cursors(output->handle, swap_damage.to_pixman());
         wlr_renderer_end(wf::get_core().renderer);
         OpenGL::render_end();
 
-        if (!wlr_render_pass_submit(render_pass))
-        {
-            LOGE("!wlr_render_pass_submit");
-            wlr_buffer_unlock(buffer);
-            goto finish;
-            return;
-        }
-
-        wlr_output_state_set_buffer(&pending, buffer);
-        wlr_buffer_unlock(buffer);
-
-        if (!wlr_output_test_state(output->handle, &pending))
-        {
-            goto finish;
-        }
-
-        if (!wlr_output_commit_state(output->handle, &pending))
-        {
-            LOGE("!wlr_output_commit_state");
-            goto finish;
-        }
-
-        wlr_damage_ring_rotate(&output_damage->damage_ring);
-
         /* Part 6: finalize frame: swap buffers, send frame_done, etc */
-finish:
-        output_damage->frame_damage.clear();
-        wlr_output_state_finish(&pending);
+        output_damage->swap_buffers(std::move(next_frame), swap_damage);
         OpenGL::unbind_output(output);
         swap_damage.clear();
         post_paint();
@@ -1073,8 +1095,7 @@ finish:
     void post_paint()
     {
         effects->run_effects(OUTPUT_EFFECT_POST);
-
-        if (constant_redraw_counter)
+        if (output_damage->constant_redraw_counter)
         {
             output_damage->schedule_repaint();
         }
@@ -1171,7 +1192,7 @@ render_manager::~render_manager() = default;
 
 void render_manager::set_redraw_always(bool always)
 {
-    pimpl->set_redraw_always(always);
+    pimpl->output_damage->set_redraw_always(always);
 }
 
 wf::region_t render_manager::get_swap_damage()
