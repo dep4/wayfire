@@ -263,13 +263,7 @@ struct output_layout_output_t
             on_commit.set_callback([=] (void *data)
             {
                 wlr_output_event_commit *ev = static_cast<wlr_output_event_commit*>(data);
-                if (!ev)
-                {
-                    return;
-                }
-
-                auto state = ev->state;
-                if (state->committed & WLR_OUTPUT_STATE_MODE)
+                if (ev->state->committed & WLR_OUTPUT_STATE_MODE)
                 {
                     handle_mode_changed();
                 }
@@ -1485,30 +1479,18 @@ class output_layout_t::impl
             return;
         }
 
-        config[ev->output].source =
-            (ev->mode == ZWLR_OUTPUT_POWER_V1_MODE_ON ?
-                OUTPUT_IMAGE_SOURCE_SELF : OUTPUT_IMAGE_SOURCE_DPMS);
+        const bool wants_dpms = (ev->mode == ZWLR_OUTPUT_POWER_V1_MODE_OFF);
+        config[ev->output].source = (wants_dpms ? OUTPUT_IMAGE_SOURCE_DPMS : OUTPUT_IMAGE_SOURCE_SELF);
         apply_configuration(config);
 
-        for (auto& output : outputs)
+        auto& wo = outputs[ev->output];
+        if (wo->inhibited != wants_dpms)
         {
-            if (ev->output != output.first)
-            {
-                continue;
-            }
-
-            if ((ev->mode == ZWLR_OUTPUT_POWER_V1_MODE_ON) && output.second->inhibited)
-            {
-                output.second->inhibited = false;
-                output.second->output->render->add_inhibit(output.second->inhibited);
-            } else if ((ev->mode == ZWLR_OUTPUT_POWER_V1_MODE_OFF) && !output.second->inhibited)
-            {
-                output.second->inhibited = true;
-                output.second->output->render->add_inhibit(output.second->inhibited);
-            }
-
-            output.second->output->render->damage_whole();
+            wo->inhibited = wants_dpms;
+            wo->output->render->add_inhibit(wants_dpms);
         }
+
+        wo->output->render->damage_whole();
     }
 
     /* Public API functions */
