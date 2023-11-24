@@ -805,11 +805,7 @@ struct output_layout_output_t
             return;
         }
 
-        if (!(is_nested_compositor && output))
-        {
-            set_enabled(!(state.source & OUTPUT_IMAGE_SOURCE_NONE));
-        }
-
+        set_enabled(!(state.source & OUTPUT_IMAGE_SOURCE_NONE));
         apply_mode(state.mode);
 
         if (state.source & OUTPUT_IMAGE_SOURCE_SELF)
