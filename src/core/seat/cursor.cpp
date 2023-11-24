@@ -127,22 +127,7 @@ void wf::cursor_t::init_xcursor()
     }
 
     xcursor = wlr_xcursor_manager_create(theme_ptr, size);
-
-    load_xcursor_scale(1);
-    for (auto& wo : wf::get_core().output_layout->get_current_configuration())
-    {
-        if (wo.second.source & wf::OUTPUT_IMAGE_SOURCE_SELF)
-        {
-            load_xcursor_scale(wo.first->scale);
-        }
-    }
-
     set_cursor("default");
-}
-
-void wf::cursor_t::load_xcursor_scale(float scale)
-{
-    wlr_xcursor_manager_load(xcursor, scale);
 }
 
 void wf::cursor_t::set_cursor(std::string name)

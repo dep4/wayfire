@@ -49,7 +49,6 @@ struct cursor_t
 
     void init_xcursor();
     void setup_listeners();
-    void load_xcursor_scale(float scale);
 
     // Device event listeners
     wf::wl_listener_wrapper on_button, on_motion, on_motion_absolute, on_axis,

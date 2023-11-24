@@ -828,8 +828,6 @@ struct output_layout_output_t
             if (handle->scale != state.scale)
             {
                 wlr_output_set_scale(handle, state.scale);
-                wf::get_core_impl().seat->priv->cursor->load_xcursor_scale(
-                    state.scale);
             }
 
             wlr_output_commit(handle);
