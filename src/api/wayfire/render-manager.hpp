@@ -148,14 +148,15 @@ class render_manager
      * Same as damage_whole(), but damages only a part of the output.
      *
      * @param box The output box to be damaged, in output-local coordinates.
+     * @param repaint Whether to automatically schedule an output repaint.
      */
     void damage(const wlr_box& box, bool repaint = true);
 
     /**
      * Same as damage_whole(), but damages only a part of the output.
      *
-     * @param region The output region to be damaged, in output-local
-     *        coordinates.
+     * @param region The output region to be damaged, in output-local coordinates.
+     * @param repaint Whether to automatically schedule an output repaint.
      */
     void damage(const wf::region_t& region, bool repaint = true);
 

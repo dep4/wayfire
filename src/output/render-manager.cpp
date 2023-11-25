@@ -33,6 +33,10 @@ struct output_damage_t
     signal::connection_t<scene::root_node_update_signal> root_update;
     std::vector<scene::render_instance_uptr> render_instances;
 
+    wf::wl_listener_wrapper on_needs_frame;
+    wf::wl_listener_wrapper on_damage;
+    wf::wl_listener_wrapper on_request_state;
+
     wf::region_t frame_damage;
     wlr_output *output;
     wlr_damage_ring damage_ring;
@@ -69,6 +73,13 @@ struct output_damage_t
         }
     }
 
+    void update_damage_ring_bounds()
+    {
+        int width, height;
+        wlr_output_transformed_resolution(output, &width, &height);
+        wlr_damage_ring_set_bounds(&damage_ring, width, height);
+    }
+
     output_damage_t(output_t *output)
     {
         this->output = output->handle;
@@ -85,9 +96,30 @@ struct output_damage_t
         output->connect(&output_mode_changed);
 
         wlr_damage_ring_init(&damage_ring);
-        int width, height;
-        wlr_output_transformed_resolution(output->handle, &width, &height);
-        wlr_damage_ring_set_bounds(&damage_ring, width, height);
+        update_damage_ring_bounds();
+
+        on_needs_frame.set_callback([&] (void*) { schedule_repaint(); });
+        on_damage.set_callback([&] (void *data)
+        {
+            auto ev = static_cast<wlr_output_event_damage*>(data);
+            if (wlr_damage_ring_add(&damage_ring, ev->damage))
+            {
+                schedule_repaint();
+            }
+        });
+
+        on_request_state.set_callback([&] (void *data)
+        {
+            auto ev = static_cast<wlr_output_event_request_state*>(data);
+            wlr_output_commit_state(output->handle, ev->state);
+            update_damage_ring_bounds();
+            damage_whole();
+            schedule_repaint();
+        });
+
+        on_needs_frame.connect(&output->handle->events.needs_frame);
+        on_damage.connect(&output->handle->events.damage);
+        on_request_state.connect(&output->handle->events.request_state);
     }
 
     wf::signal::connection_t<wf::output_configuration_changed_signal>
@@ -98,9 +130,7 @@ struct output_damage_t
             return;
         }
 
-        int width, height;
-        wlr_output_transformed_resolution(output, &width, &height);
-        wlr_damage_ring_set_bounds(&damage_ring, width, height);
+        update_damage_ring_bounds();
         schedule_repaint();
     };
 
@@ -211,12 +241,12 @@ struct output_damage_t
         return true;
     }
 
+    bool force_next_frame = false;
     /**
      * Start rendering a new frame.
      * If the operation could not be started, or if a new frame is not needed, the function returns false.
      * If the operation succeeds, true is returned, and the output (E)GL context is bound.
      */
-    bool force_next_frame = false;
     std::unique_ptr<frame_object_t> start_frame()
     {
         const bool needs_swap = force_next_frame | output->needs_frame |
@@ -827,7 +857,7 @@ struct repaint_delay_manager_t
 class wf::render_manager::impl
 {
   public:
-    wf::wl_listener_wrapper on_frame, on_needs_frame, on_damage, on_request_state;
+    wf::wl_listener_wrapper on_frame;
     wf::wl_timer<false> repaint_timer;
 
     output_t *output;
@@ -874,36 +904,7 @@ class wf::render_manager::impl
             output->emit(&ev);
         });
 
-        on_needs_frame.set_callback([&] (void*)
-        {
-            output_damage->schedule_repaint();
-        });
-
-        on_damage.set_callback([&] (void *data)
-        {
-            auto ev = static_cast<wlr_output_event_damage*>(data);
-            if (wlr_damage_ring_add(&output_damage->damage_ring, ev->damage))
-            {
-                output_damage->schedule_repaint();
-            }
-        });
-
-
-        on_request_state.set_callback([&] (void *data)
-        {
-            auto ev = static_cast<wlr_output_event_request_state*>(data);
-            wlr_output_commit_state(output->handle, ev->state);
-            wlr_damage_ring_set_bounds(&output_damage->damage_ring,
-                output->get_relative_geometry().width,
-                output->get_relative_geometry().height);
-            output_damage->damage_whole();
-            output_damage->schedule_repaint();
-        });
-
         on_frame.connect(&output->handle->events.frame);
-        on_needs_frame.connect(&output->handle->events.needs_frame);
-        on_damage.connect(&output->handle->events.damage);
-        on_request_state.connect(&output->handle->events.request_state);
 
         background_color_opt.load_option("core/background_color");
         background_color_opt.set_callback([=] ()
