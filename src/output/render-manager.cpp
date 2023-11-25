@@ -22,6 +22,7 @@
 #include <wayfire/nonstd/safe-list.hpp>
 #include <wayfire/util/log.hpp>
 #include <wayfire/nonstd/wlroots-full.hpp>
+#include <wlr/types/wlr_gamma_control_v1.h>
 
 namespace wf
 {
@@ -37,11 +38,14 @@ struct swapchain_damage_manager_t
     wf::wl_listener_wrapper on_needs_frame;
     wf::wl_listener_wrapper on_damage;
     wf::wl_listener_wrapper on_request_state;
+    wf::wl_listener_wrapper on_gamma_changed;
 
     wf::region_t frame_damage;
     wlr_output *output;
     wlr_damage_ring damage_ring;
     output_t *wo;
+
+    bool pending_gamma_lut = false;
 
     void update_scenegraph(uint32_t update_mask)
     {
@@ -118,9 +122,20 @@ struct swapchain_damage_manager_t
             schedule_repaint();
         });
 
+        on_gamma_changed.set_callback([&] (void *data)
+        {
+            auto event = (const wlr_gamma_control_manager_v1_set_gamma_event*)data;
+            if (event->output == this->output)
+            {
+                pending_gamma_lut = true;
+                schedule_repaint();
+            }
+        });
+
         on_needs_frame.connect(&output->handle->events.needs_frame);
         on_damage.connect(&output->handle->events.damage);
         on_request_state.connect(&output->handle->events.request_state);
+        on_gamma_changed.connect(&wf::get_core().protocols.gamma_v1->events.set_gamma);
     }
 
     wf::signal::connection_t<wf::output_configuration_changed_signal>
@@ -242,6 +257,31 @@ struct swapchain_damage_manager_t
         return true;
     }
 
+    bool try_apply_gamma(frame_object_t& next_frame)
+    {
+        if (!pending_gamma_lut)
+        {
+            return true;
+        }
+
+        pending_gamma_lut = false;
+        auto gamma_control =
+            wlr_gamma_control_manager_v1_get_control(wf::get_core().protocols.gamma_v1, output);
+
+        if (!wlr_gamma_control_v1_apply(gamma_control, &next_frame.state))
+        {
+            LOGE("Failed to apply gamma to output state!");
+            return false;
+        }
+
+        if (!wlr_output_test_state(output, &next_frame.state))
+        {
+            wlr_gamma_control_v1_send_failed_and_destroy(gamma_control);
+        }
+
+        return true;
+    }
+
     bool force_next_frame = false;
     /**
      * Start rendering a new frame.
@@ -261,6 +301,12 @@ struct swapchain_damage_manager_t
 
         auto next_frame = std::make_unique<frame_object_t>();
         next_frame->state.committed |= WLR_OUTPUT_STATE_DAMAGE;
+
+        if (!try_apply_gamma(*next_frame))
+        {
+            return {};
+        }
+
         if (!acquire_next_swapchain_buffer(*next_frame))
         {
             return {};
