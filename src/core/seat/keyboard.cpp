@@ -294,7 +294,7 @@ bool wf::keyboard_t::handle_keyboard_key(uint32_t key, uint32_t state)
 
     if (state == WLR_KEY_PRESSED)
     {
-        if (wf::get_core().session && check_vt_switch(wf::get_core().session, key, get_modifiers()))
+        if (check_vt_switch(wf::get_core().session, key, get_modifiers()))
         {
             return true;
         }
