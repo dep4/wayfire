@@ -57,6 +57,11 @@ These are the dependencies needed for building Wayfire.
 These are the dependencies needed for building wlroots, and should be installed before building it.
 They are relevant for cases when the system doesn't have a version of wlroots installed.
 
+#### DRM Backend (optional, but you most likely want this)
+
+- [libdisplay-info-dev](https://gitlab.freedesktop.org/emersion/libdisplay-info)
+- [hwdata-dev](https://github.com/vcrhonek/hwdata)
+
 #### Session Provider (optional, recommended)
 
 - [systemd](https://systemd.io/) **or**
