@@ -169,9 +169,9 @@ struct seat_activity_signal
 
 /**
  * on: core
- * when: input inhibit changed.
+ * when: idle inhibit changed.
  */
-struct input_inhibit_changed_signal
+struct idle_inhibit_changed_signal
 {
     bool inhibit;
 };

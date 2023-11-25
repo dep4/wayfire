@@ -149,8 +149,8 @@ class wayfire_idle_plugin : public wf::per_output_plugin_instance_t
         update_fullscreen();
     };
 
-    wf::signal::connection_t<wf::input_inhibit_changed_signal> inhibit_changed =
-        [=] (wf::input_inhibit_changed_signal *ev)
+    wf::signal::connection_t<wf::idle_inhibit_changed_signal> inhibit_changed =
+        [=] (wf::idle_inhibit_changed_signal *ev)
     {
         if (!ev)
         {
