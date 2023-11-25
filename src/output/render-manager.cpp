@@ -26,9 +26,10 @@
 namespace wf
 {
 /**
- * output_damage_t is responsible for tracking the damage on a given output.
+ * swapchain_damage_manager_t is responsible for tracking the damage and managing the swapchain on the
+ * given output.
  */
-struct output_damage_t
+struct swapchain_damage_manager_t
 {
     signal::connection_t<scene::root_node_update_signal> root_update;
     std::vector<scene::render_instance_uptr> render_instances;
@@ -80,7 +81,7 @@ struct output_damage_t
         wlr_damage_ring_set_bounds(&damage_ring, width, height);
     }
 
-    output_damage_t(output_t *output)
+    swapchain_damage_manager_t(output_t *output)
     {
         this->output = output->handle;
         this->wo     = output;
@@ -862,7 +863,7 @@ class wf::render_manager::impl
 
     output_t *output;
     wf::region_t swap_damage;
-    std::unique_ptr<output_damage_t> output_damage;
+    std::unique_ptr<swapchain_damage_manager_t> damage_manager;
     std::unique_ptr<effect_hook_manager_t> effects;
     std::unique_ptr<postprocessing_manager_t> postprocessing;
     std::unique_ptr<depth_buffer_manager_t> depth_buffer_manager;
@@ -873,7 +874,7 @@ class wf::render_manager::impl
     impl(output_t *o) :
         output(o)
     {
-        output_damage = std::make_unique<output_damage_t>(o);
+        damage_manager = std::make_unique<swapchain_damage_manager_t>(o);
         effects = std::make_unique<effect_hook_manager_t>();
         postprocessing = std::make_unique<postprocessing_manager_t>(o);
         depth_buffer_manager = std::make_unique<depth_buffer_manager_t>();
@@ -909,10 +910,10 @@ class wf::render_manager::impl
         background_color_opt.load_option("core/background_color");
         background_color_opt.set_callback([=] ()
         {
-            output_damage->damage_whole_idle();
+            damage_manager->damage_whole_idle();
         });
 
-        output_damage->schedule_repaint();
+        damage_manager->schedule_repaint();
     }
 
     int output_inhibit_counter = 0;
@@ -921,7 +922,7 @@ class wf::render_manager::impl
         output_inhibit_counter += add ? 1 : -1;
         if (output_inhibit_counter == 0)
         {
-            output_damage->damage_whole_idle();
+            damage_manager->damage_whole_idle();
 
             wf::output_start_rendering_signal data;
             data.output = output;
@@ -959,7 +960,7 @@ class wf::render_manager::impl
         }
 
         auto result = scene::try_scanout_from_list(
-            output_damage->render_instances, output);
+            damage_manager->render_instances, output);
         return result == scene::direct_scanout::SUCCESS;
     }
 
@@ -981,7 +982,7 @@ class wf::render_manager::impl
         if (runtime_config.damage_debug)
         {
             /* Clear the screen to yellow, so that the repainted parts are visible */
-            swap_damage |= output_damage->get_wlr_damage_box();
+            swap_damage |= damage_manager->get_wlr_damage_box();
 
             OpenGL::render_begin(output->handle->width, output->handle->height,
                 postprocessing->output_fb);
@@ -990,8 +991,8 @@ class wf::render_manager::impl
         }
 
         scene::render_pass_params_t params;
-        params.instances = &output_damage->render_instances;
-        params.damage    = output_damage->get_ws_damage(
+        params.instances = &damage_manager->render_instances;
+        params.damage    = damage_manager->get_ws_damage(
             output->wset()->get_current_workspace());
         params.damage += wf::origin(output->get_layout_geometry());
 
@@ -1004,10 +1005,10 @@ class wf::render_manager::impl
             scene::RPASS_CLEAR_BACKGROUND | scene::RPASS_EMIT_SIGNALS);
         swap_damage += -wf::origin(output->get_layout_geometry());
         swap_damage  = swap_damage * output->handle->scale;
-        swap_damage &= output_damage->get_wlr_damage_box();
+        swap_damage &= damage_manager->get_wlr_damage_box();
         if (runtime_config.damage_debug)
         {
-            swap_damage |= output_damage->get_wlr_damage_box();
+            swap_damage |= damage_manager->get_wlr_damage_box();
         }
     }
 
@@ -1038,7 +1039,7 @@ class wf::render_manager::impl
             return;
         }
 
-        auto next_frame = output_damage->start_frame();
+        auto next_frame = damage_manager->start_frame();
         if (!next_frame)
         {
             // Optimization: the output doesn't need a new frame (so isn't damaged), so we can
@@ -1059,7 +1060,7 @@ class wf::render_manager::impl
         /* Part 4: finalize the scene: postprocessing effects */
         if (postprocessing->post_effects.size())
         {
-            swap_damage |= output_damage->get_wlr_damage_box();
+            swap_damage |= damage_manager->get_wlr_damage_box();
         }
 
         postprocessing->run_post_effects();
@@ -1081,7 +1082,7 @@ class wf::render_manager::impl
         OpenGL::render_end();
 
         /* Part 6: finalize frame: swap buffers, send frame_done, etc */
-        output_damage->swap_buffers(std::move(next_frame), swap_damage);
+        damage_manager->swap_buffers(std::move(next_frame), swap_damage);
         OpenGL::unbind_output(output);
         swap_damage.clear();
         post_paint();
@@ -1093,9 +1094,9 @@ class wf::render_manager::impl
     void post_paint()
     {
         effects->run_effects(OUTPUT_EFFECT_POST);
-        if (output_damage->constant_redraw_counter)
+        if (damage_manager->constant_redraw_counter)
         {
-            output_damage->schedule_repaint();
+            damage_manager->schedule_repaint();
         }
     }
 };
@@ -1190,7 +1191,7 @@ render_manager::~render_manager() = default;
 
 void render_manager::set_redraw_always(bool always)
 {
-    pimpl->output_damage->set_redraw_always(always);
+    pimpl->damage_manager->set_redraw_always(always);
 }
 
 wf::region_t render_manager::get_swap_damage()
@@ -1200,7 +1201,7 @@ wf::region_t render_manager::get_swap_damage()
 
 void render_manager::schedule_redraw()
 {
-    pimpl->output_damage->schedule_repaint();
+    pimpl->damage_manager->schedule_repaint();
 }
 
 void render_manager::add_inhibit(bool add)
@@ -1230,32 +1231,32 @@ void render_manager::rem_post(post_hook_t *hook)
 
 wf::region_t render_manager::get_scheduled_damage()
 {
-    return pimpl->output_damage->get_scheduled_damage();
+    return pimpl->damage_manager->get_scheduled_damage();
 }
 
 void render_manager::damage_whole()
 {
-    pimpl->output_damage->damage_whole();
+    pimpl->damage_manager->damage_whole();
 }
 
 void render_manager::damage_whole_idle()
 {
-    pimpl->output_damage->damage_whole_idle();
+    pimpl->damage_manager->damage_whole_idle();
 }
 
 void render_manager::damage(const wlr_box& box, bool repaint)
 {
-    pimpl->output_damage->damage(box, repaint);
+    pimpl->damage_manager->damage(box, repaint);
 }
 
 void render_manager::damage(const wf::region_t& region, bool repaint)
 {
-    pimpl->output_damage->damage(region, repaint);
+    pimpl->damage_manager->damage(region, repaint);
 }
 
 wlr_box render_manager::get_ws_box(wf::point_t ws) const
 {
-    return pimpl->output_damage->get_ws_box(ws);
+    return pimpl->damage_manager->get_ws_box(ws);
 }
 
 wf::render_target_t render_manager::get_target_framebuffer() const
