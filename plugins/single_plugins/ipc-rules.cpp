@@ -25,6 +25,24 @@
 #include <wayfire/nonstd/wlroots-full.hpp>
 
 
+static std::string role_to_string(enum wf::view_role_t role)
+{
+    switch (role)
+    {
+      case wf::VIEW_ROLE_TOPLEVEL:
+        return "toplevel";
+
+      case wf::VIEW_ROLE_UNMANAGED:
+        return "unmanaged";
+
+      case wf::VIEW_ROLE_DESKTOP_ENVIRONMENT:
+        return "desktop-environment";
+
+      default:
+        return "unknown";
+    }
+}
+
 static std::string layer_to_string(std::optional<wf::scene::layer> layer)
 {
     if (!layer.has_value())
@@ -168,6 +186,7 @@ class ipc_rules_t : public wf::plugin_interface_t, public wf::per_output_tracker
             v["bbox"]   = wf::ipc::geometry_to_json(view->get_bounding_box());
             v["output"] = view->get_output() ? view->get_output()->to_string() : "null";
             v["last-focus-timestamp"] = wf::get_focus_timestamp(view);
+            v["role"] = role_to_string(view->role);
 
             v["state"] = {};
             v["state"]["mapped"]    = view->is_mapped();
