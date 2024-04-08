@@ -156,9 +156,8 @@ class wayfire_unmanaged_xwayland_view : public wayfire_xwayland_view_internal_ba
     void handle_map_request(wlr_surface *surface) override
     {
         LOGC(XWL, "Mapping unmanaged xwayland surface ", self());
-        do_map(surface, true, false);
-
         update_geometry_from_xsurface();
+        do_map(surface, true, false);
 
         /* We update the keyboard focus before emitting the map event, so that
          * plugins can detect that this view can have keyboard focus.

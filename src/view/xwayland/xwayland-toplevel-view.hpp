@@ -383,6 +383,11 @@ class wayfire_xwayland_view : public wf::toplevel_view_interface_t, public wayfi
 
     void map(wlr_surface *surface)
     {
+        if (!get_output())
+        {
+            this->set_output(wf::get_core().seat->get_active_output());
+        }
+
         if (!parent)
         {
             wf::scene::readd_front(get_output()->wset()->get_node(), get_root_node());

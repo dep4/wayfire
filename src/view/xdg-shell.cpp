@@ -152,6 +152,12 @@ std::shared_ptr<wayfire_xdg_popup> wayfire_xdg_popup::create(wlr_xdg_popup *popu
 
 void wayfire_xdg_popup::map()
 {
+    if (!get_output())
+    {
+        close();
+        return;
+    }
+
     update_position();
 
     wf::scene::layer parent_layer = wf::get_view_layer(popup_parent).value_or(wf::scene::layer::WORKSPACE);
@@ -180,6 +186,11 @@ void wayfire_xdg_popup::map()
 
 void wayfire_xdg_popup::unmap()
 {
+    if (!is_mapped())
+    {
+        return;
+    }
+
     on_keyboard_focus_changed.disconnect();
     damage();
     emit_view_pre_unmap();
