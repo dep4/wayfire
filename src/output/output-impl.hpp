@@ -3,7 +3,6 @@
 #include "wayfire/bindings.hpp"
 #include "wayfire/output.hpp"
 #include "wayfire/plugin.hpp"
-#include "wayfire/scene-input.hpp"
 #include "wayfire/scene-render.hpp"
 #include "wayfire/scene.hpp"
 #include "wayfire/signal-definitions.hpp"
@@ -72,4 +71,5 @@ class output_impl_t : public output_t
 void update_focus_timestamp(wayfire_view view);
 
 void priv_render_manager_clear_instances(wf::render_manager *manager);
+void priv_render_manager_start_rendering(wf::render_manager *manager);
 }

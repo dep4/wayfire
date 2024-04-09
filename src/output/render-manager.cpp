@@ -92,11 +92,8 @@ struct swapchain_damage_manager_t
         wlr_damage_ring_set_bounds(&damage_ring, width, height);
     }
 
-    swapchain_damage_manager_t(output_t *output)
+    void start_rendering()
     {
-        this->output = output->handle;
-        this->wo     = output;
-
         auto root = wf::get_core().scene();
         root_update = [=] (scene::root_node_update_signal *data)
         {
@@ -105,6 +102,13 @@ struct swapchain_damage_manager_t
 
         root->connect<scene::root_node_update_signal>(&root_update);
         update_scenegraph(scene::update_flag::CHILDREN_LIST);
+    }
+
+    swapchain_damage_manager_t(output_t *output)
+    {
+        this->output = output->handle;
+        this->wo     = output;
+
         output->connect(&output_mode_changed);
 
         wlr_damage_ring_init(&damage_ring);
@@ -1356,6 +1360,12 @@ void render_manager::set_require_depth_buffer(bool require)
 void priv_render_manager_clear_instances(wf::render_manager *manager)
 {
     manager->pimpl->damage_manager->render_instances.clear();
+    manager->pimpl->damage_manager->root_update.disconnect();
+}
+
+void priv_render_manager_start_rendering(wf::render_manager *manager)
+{
+    manager->pimpl->damage_manager->start_rendering();
 }
 } // namespace wf
 

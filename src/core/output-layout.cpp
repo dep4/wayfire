@@ -501,6 +501,7 @@ struct output_layout_output_t
         this->output =
             std::make_unique<wf::output_impl_t>(handle, effective_size);
         auto wo = output.get();
+        priv_render_manager_start_rendering(wo->render.get());
 
         /* Focus the first output, but do not change the focus on subsequently
          * added outputs. We also change the focus if the noop output was
