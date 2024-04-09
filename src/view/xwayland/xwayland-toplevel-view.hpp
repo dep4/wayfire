@@ -325,6 +325,7 @@ class wayfire_xwayland_view : public wf::toplevel_view_interface_t, public wayfi
 
     void handle_map_request(wlr_surface*) override
     {
+        LOGC(VIEWS, "Start mapping ", self());
         this->main_surface = std::make_shared<wf::scene::wlr_surface_node_t>(xw->surface, false);
         priv->set_mapped_surface_contents(main_surface);
         toplevel->set_main_surface(main_surface);
@@ -373,6 +374,7 @@ class wayfire_xwayland_view : public wf::toplevel_view_interface_t, public wayfi
 
     void handle_unmap_request() override
     {
+        LOGC(VIEWS, "Start unmapping ", self());
         emit_view_pre_unmap();
         // Store a reference to this until the view is actually unmapped with a transaction.
         _self_ref = shared_from_this();
@@ -383,6 +385,7 @@ class wayfire_xwayland_view : public wf::toplevel_view_interface_t, public wayfi
 
     void map(wlr_surface *surface)
     {
+        LOGC(VIEWS, "Do map ", self());
         if (!get_output())
         {
             this->set_output(wf::get_core().seat->get_active_output());
@@ -409,6 +412,7 @@ class wayfire_xwayland_view : public wf::toplevel_view_interface_t, public wayfi
 
     void unmap()
     {
+        LOGC(VIEWS, "Do unmap ", self());
         do_unmap();
         on_surface_commit.disconnect();
     }

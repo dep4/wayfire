@@ -59,6 +59,7 @@ wf::xdg_toplevel_view_base_t::xdg_toplevel_view_base_t(wlr_xdg_toplevel *topleve
 
 void wf::xdg_toplevel_view_base_t::map()
 {
+    LOGC(VIEWS, "Do map ", self());
     priv->set_mapped(true);
     priv->set_mapped_surface_contents(main_surface);
     damage();
@@ -67,6 +68,7 @@ void wf::xdg_toplevel_view_base_t::map()
 
 void wf::xdg_toplevel_view_base_t::unmap()
 {
+    LOGC(VIEWS, "Do unmap ", self());
     damage();
     priv->unset_mapped_surface_contents();
 
@@ -495,6 +497,7 @@ void wf::init_xdg_decoration_handlers()
 
 void wf::xdg_toplevel_view_t::start_map_tx()
 {
+    LOGC(VIEWS, "Start mapping ", self());
     wlr_box box;
     wlr_xdg_surface_get_geometry(xdg_toplevel->base, &box);
     auto margins = wtoplevel->pending().margins;
@@ -508,6 +511,7 @@ void wf::xdg_toplevel_view_t::start_map_tx()
 
 void wf::xdg_toplevel_view_t::start_unmap_tx()
 {
+    LOGC(VIEWS, "Start unmapping ", self());
     emit_view_pre_unmap();
 
     // Take reference until the view has been unmapped
