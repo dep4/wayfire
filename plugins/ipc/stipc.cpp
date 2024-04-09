@@ -388,6 +388,11 @@ class stipc_plugin_t : public wf::plugin_interface_t
                 (std::string)data["output"] + "\"");
         }
 
+        if (!wlr_output_is_wl(output->handle))
+        {
+            return wf::ipc::json_error("Output is not a wayland output!");
+        }
+
         wlr_output_destroy(output->handle);
         return wf::ipc::json_ok();
     };
