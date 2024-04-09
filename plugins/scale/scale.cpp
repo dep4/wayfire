@@ -912,6 +912,7 @@ class wayfire_scale : public wf::per_output_plugin_instance_t,
      * plugin algorithm */
     void layout_slots(std::vector<wayfire_toplevel_view> views)
     {
+        wf::dassert(active || hook_set, "Scale is not active");
         if (!views.size())
         {
             if (!all_workspaces && active)
@@ -1144,9 +1145,7 @@ class wayfire_scale : public wf::per_output_plugin_instance_t,
                 if (scale_data.empty())
                 {
                     finalize();
-                }
-
-                if (!view->parent)
+                } else if (!view->parent)
                 {
                     layout_slots(get_views());
                 }
