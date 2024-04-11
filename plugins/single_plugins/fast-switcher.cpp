@@ -24,12 +24,14 @@ class wayfire_fast_switcher : public wf::per_output_plugin_instance_t, public wf
     wf::option_wrapper_t<wf::keybinding_t> activate_key_backward{
         "fast-switcher/activate_backward"};
     wf::option_wrapper_t<double> inactive_alpha{"fast-switcher/inactive_alpha"};
+    wf::option_wrapper_t<bool> include_minimized{"fast-switcher/include_minimized"};
     std::vector<wayfire_toplevel_view> views; // all views on current viewport
     size_t current_view_index = 0;
     // the modifiers which were used to activate switcher
     uint32_t activating_modifiers = 0;
     bool active = false;
     std::unique_ptr<wf::input_grab_t> input_grab;
+    uint32_t views_filter_flags = wf::WSET_CURRENT_WORKSPACE | wf::WSET_MAPPED_ONLY;
 
     wf::plugin_activation_data_t grab_interface = {
         .name = "fast-switcher",
@@ -43,6 +45,7 @@ class wayfire_fast_switcher : public wf::per_output_plugin_instance_t, public wf
         output->add_key(activate_key_backward, &fast_switch_backward);
         input_grab = std::make_unique<wf::input_grab_t>("fast-switch", output, this, nullptr, nullptr);
         grab_interface.cancel = [=] () { switch_terminate(); };
+        views_filter_flags |= include_minimized ? 0 : wf::WSET_EXCLUDE_MINIMIZED;
     }
 
     void handle_keyboard_key(wf::seat_t*, wlr_keyboard_key_event event) override
@@ -70,7 +73,7 @@ class wayfire_fast_switcher : public wf::per_output_plugin_instance_t, public wf
             wf::view_bring_to_front(views[i]);
         }
 
-        if (reorder_only)
+        if (reorder_only && !include_minimized)
         {
             wf::view_bring_to_front(views[i]);
         } else
@@ -82,7 +85,8 @@ class wayfire_fast_switcher : public wf::per_output_plugin_instance_t, public wf
     wf::signal::connection_t<wf::view_disappeared_signal> cleanup_view = [=] (wf::view_disappeared_signal *ev)
     {
         size_t i = 0;
-        for (; i < views.size() && views[i] != ev->view; i++)
+        auto tl_view = toplevel_cast(ev->view);
+        for (; i < views.size() && ( views[i] != ev->view || (include_minimized && tl_view && tl_view->minimized) ); i++)
         {}
 
         if (i == views.size())
@@ -128,8 +132,7 @@ class wayfire_fast_switcher : public wf::per_output_plugin_instance_t, public wf
 
     void update_views()
     {
-        views = output->wset()->get_views(
-            wf::WSET_CURRENT_WORKSPACE | wf::WSET_MAPPED_ONLY | wf::WSET_EXCLUDE_MINIMIZED);
+        views = output->wset()->get_views(views_filter_flags);
         std::sort(views.begin(), views.end(), [] (wayfire_toplevel_view& a, wayfire_toplevel_view& b)
         {
             return wf::get_focus_timestamp(a) > wf::get_focus_timestamp(b);

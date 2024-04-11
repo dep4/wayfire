@@ -22,5 +22,10 @@
 			<min>0.0</min>
 			<max>1.0</max>
 		</option>
+		<option name="include_minimized" type="bool">
+			<_short>Include minimized views</_short>
+			<_long>Include minimized views in switch list</_long>
+			<default>false</default>
+		</option>
 	</plugin>
 </wayfire>
