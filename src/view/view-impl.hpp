@@ -62,7 +62,7 @@ void adjust_geometry_for_gravity(wf::toplevel_state_t& desired_state, wf::dimens
 
 /** Emit the map signal for the given view */
 void init_xdg_shell();
-void init_xwayland();
+void init_xwayland(bool lazy);
 void init_layer_shell();
 
 std::string xwayland_get_display();

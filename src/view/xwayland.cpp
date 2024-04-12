@@ -213,7 +213,7 @@ class xwayland_view_controller_t
 static wlr_xwayland *xwayland_handle = nullptr;
 #endif
 
-void wf::init_xwayland()
+void wf::init_xwayland(bool lazy)
 {
 #if WF_HAS_XWAYLAND
     static wf::wl_listener_wrapper on_created;
@@ -252,7 +252,7 @@ void wf::init_xwayland()
     });
 
     xwayland_handle = wlr_xwayland_create(wf::get_core().display,
-        wf::get_core_impl().compositor, false);
+        wf::get_core_impl().compositor, lazy);
 
     if (xwayland_handle)
     {
