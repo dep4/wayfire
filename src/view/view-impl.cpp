@@ -143,7 +143,7 @@ void wf::init_desktop_apis()
     init_layer_shell();
 
     wf::option_wrapper_t<std::string> xwayland_enabled("core/xwayland");
-    if (xwayland_enabled.value() == "true" || xwayland_enabled.value() == "lazy")
+    if ((xwayland_enabled.value() == "true") || (xwayland_enabled.value() == "lazy"))
     {
         init_xwayland(xwayland_enabled.value() == "lazy");
     }
